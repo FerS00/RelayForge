@@ -52,7 +52,13 @@ Al terminar, elimina las tareas:
 ./poc10_autostart/unregister-task.ps1 -Mode StartupPassword
 ```
 
-`-GitRemote <URL>` consulta ramas con `git ls-remote --heads` (solo lectura). Si el remoto es público, un resultado correcto no demuestra que Git Credential Manager tenga credenciales. Esta POC no hace `push`. `probe.py --dry-run --label Logon` solo imprime los comandos y la etiqueta; no ejecuta CLIs ni escribe evidencia.
+`-GitRemote <URL>` consulta ramas con `git ls-remote --heads` (solo lectura). Para probar escritura desde el modo candidato, usa el repositorio privado de pruebas autorizado y la opción `-GitPushRemote`:
+
+```powershell
+./poc10_autostart/register-task.ps1 -Mode Logon -GitPushRemote <URL>
+```
+
+El `push` crea temporalmente `poc10/<modo>-<fecha>-<pid>` y la elimina al terminar si se creó correctamente. La sonda también borra el repositorio temporal local. Revisa el JSON redactado: `git_push.branch_deleted` debe ser `true`; un fallo de borrado deja la rama de prueba para retirarla manualmente. No uses esta opción con repositorios de trabajo. `probe.py --dry-run --label Logon --git-push-check <URL>` solo enumera los comandos de push y borrado; no ejecuta Git ni escribe evidencia. El `dry-run` del script no contacta el remoto.
 
 ### POC-11: Tailscale Serve, identidad y SSE
 

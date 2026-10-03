@@ -28,15 +28,15 @@ def test_whoami_reflects_only_selected_identity_headers_and_logs(tmp_path: Path)
     assert 'owner@example.com' not in raw
 
 
-def test_index_is_self_contained_and_opens_sse() -> None:
-    response = TestClient(create_app(Path('unused.ndjson'))).get('/')
+def test_index_is_self_contained_and_opens_sse(tmp_path: Path) -> None:
+    response = TestClient(create_app(tmp_path / 'app.ndjson')).get('/')
     assert response.status_code == 200
     assert 'EventSource' in response.text and "fetch('/whoami')" in response.text
     assert 'http://' not in response.text and 'https://' not in response.text
 
 
-def test_sse_emits_tick_ids_and_continues_from_last_event_id() -> None:
-    client = TestClient(create_app(Path('unused.ndjson'), sse_minutes=0.0005))
+def test_sse_emits_tick_ids_and_continues_from_last_event_id(tmp_path: Path) -> None:
+    client = TestClient(create_app(tmp_path / 'app.ndjson', sse_minutes=0.0005))
     first = client.get('/sse')
     assert first.headers['content-type'].startswith('text/event-stream')
     assert 'id: 1\nevent: tick\ndata: {"n": 1,' in first.text

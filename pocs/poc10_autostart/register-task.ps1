@@ -3,7 +3,8 @@
     [ValidateSet('Logon', 'StartupS4U', 'StartupPassword')]
     [string]$Mode,
     [switch]$Deep,
-    [string]$GitRemote
+    [string]$GitRemote,
+    [string]$GitPushRemote
 )
 
 $ErrorActionPreference = 'Stop'
@@ -17,10 +18,11 @@ if (-not (Test-Path -LiteralPath $pythonPath -PathType Leaf)) {
     exit 2
 }
 $python = (Resolve-Path -LiteralPath $pythonPath).Path
-if ($GitRemote -and ($GitRemote.Contains('"') -or $GitRemote.Contains("`r") -or $GitRemote.Contains("
-"))) {
-    Write-Error 'GitRemote no puede contener comillas ni saltos de línea.'
-    exit 2
+foreach ($remoteValue in @($GitRemote, $GitPushRemote)) {
+    if ($remoteValue -and ($remoteValue.Contains('"') -or $remoteValue.Contains("`r") -or $remoteValue.Contains("`n"))) {
+        Write-Error 'Las URL Git no pueden contener comillas ni saltos de línea.'
+        exit 2
+    }
 }
 if ($Mode -eq 'StartupS4U') {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -34,6 +36,7 @@ if ($Mode -eq 'StartupS4U') {
 $arguments = @('-X', 'utf8', "`"$probe`"", '--label', $Mode)
 if ($Deep) { $arguments += '--deep' }
 if ($GitRemote) { $arguments += @('--git-remote-check', "`"$GitRemote`"") }
+if ($GitPushRemote) { $arguments += @('--git-push-check', "`"$GitPushRemote`"") }
 $action = New-ScheduledTaskAction -Execute $python -Argument ($arguments -join ' ') -WorkingDirectory $workingDirectory
 $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 10) -StartWhenAvailable
 $user = [Security.Principal.WindowsIdentity]::GetCurrent().Name

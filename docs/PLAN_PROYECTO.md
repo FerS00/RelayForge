@@ -5,7 +5,7 @@
 - Proyecto: RelayForge (nombre provisional)
 - Ruta canónica: `docs/PLAN_PROYECTO.md`
 - Estado: **Aprobado** (2026-10-02)
-- Última actualización: 2026-10-02
+- Última actualización: 2026-10-03
 - Responsable de aprobación: propietario del proyecto (usuario)
 - Licencia decidida: Apache-2.0
 - Estados permitidos del documento: `Borrador pendiente de aprobación`, `Aprobado`, `En ejecución`, `Bloqueado`, `Completado`.
@@ -52,7 +52,7 @@ El flujo «Claude especifica → Codex implementa → Antigravity audita → má
 La laptop replica `~/.claude/CLAUDE.md` y las skills. Esa configuración **indica a Claude que delegue directamente en Codex y Antigravity** mediante `codex-delegate` y `antigravity-audit`. Dentro de RelayForge eso eludiría la capa controlada de herramientas, el Policy Engine y la trazabilidad. Análogamente, Codex podría tener una skill de delegación inversa hacia Claude. Mitigación propuesta (validar en POC-04 y POC-09):
 
 1. RelayForge inyecta en cada proceso la variable `RELAYFORGE_JOB_ID` y un `--append-system-prompt` que establece: «Estás dentro de RelayForge; la delegación solo ocurre mediante las herramientas `relayforge`; no uses `codex-delegate` ni `antigravity-audit`».
-2. Además restringe el proceso con `--disallowedTools` y `--settings` para denegar `Bash(codex*)`, `Bash(agy*)`, `Bash(*audit.py*)`, `Bash(git push*)` y similares. La instrucción en texto no es una barrera; el bloqueo de herramientas sí.
+2. Además restringe el proceso con `--disallowedTools` y `--settings` para denegar `Bash(codex:*)`/`Bash(codex *)`, `Bash(agy:*)`/`Bash(agy *)`, `Bash(*audit.py*)`, `Bash(git push:*)` y similares (solo los patrones de `codex` están confirmados en POC-04; los demás se verifican al implementarlos). La instrucción en texto no es una barrera; el bloqueo de herramientas sí.
 3. **Decisión pendiente (D-07):** añadir a `~/.claude/CLAUDE.md` global (PC y laptop) una regla «si `RELAYFORGE_JOB_ID` está definido, no delegues fuera de RelayForge». Toca configuración personal y requiere aprobación.
 
 ### 0.4 Sobre el sistema operativo de la laptop (respuesta a «¿me recomiendas Linux?»)
@@ -99,7 +99,7 @@ Clasificación global:
 
 RelayForge es una **aplicación web self-hosted, de un solo propietario**, que corre en una máquina Windows (laptop) accesible solo por la tailnet del propietario. Permite:
 
-1. Registrar repositorios Git locales de esa máquina.
+1. Registrar repositorios Git locales existentes o crear uno nuevo (`git init`) en esa máquina (D-14).
 2. Conversar con un orquestador (Claude Code real) asociado a cada Job.
 3. Crear Jobs que siguen una plantilla de workflow (trivial, feature o security) en un worktree aislado.
 4. Ejecutar implementador (Codex), checks (tests/lint declarados por el repositorio) y auditor (Antigravity en solo lectura), con un bucle de revisión de máximo 3 iteraciones.
@@ -143,7 +143,8 @@ Las tablas de alcance detalladas están en las secciones 3 y 39.
 - Apps de escritorio o móviles nativas, Discord o Telegram, API pública externa.
 - Terminal interactiva remota (PTY) dentro de la web.
 - Merge automático a ramas protegidas, despliegues, migraciones de bases de datos.
-- Editor de workflows; DAG arbitrario; ejecución paralela de varios Jobs sobre el mismo repositorio en el MVP (ver 21.4).
+- Editor de workflows; DAG arbitrario. (La ejecución paralela de varios Jobs sobre el mismo repositorio pasó al MVP: D-13, sección 21.4.)
+- Crear repositorios remotos en GitHub desde la web (solo repositorios locales, D-14).
 - Plataforma de observabilidad (Prometheus/Grafana/OTel).
 - Diseño visual pulido (Fase 11, después del MVP funcional).
 
@@ -152,6 +153,8 @@ Las tablas de alcance detalladas están en las secciones 3 y 39.
 | ID | Actor | Caso | Resultado |
 |---|---|---|---|
 | CU-01 | Propietario | Registrar un repositorio local (`C:\dev\OPERATIX`) con sus comandos de check. | Repositorio validado y visible. |
+| CU-01b | Propietario | Crear desde la web un repositorio nuevo y vacío en una carpeta bajo la raíz de proyectos configurada. | `git init` + commit inicial vacío; repositorio registrado y listo para recibir tareas (D-14). |
+| CU-03b | Propietario | Lanzar dos o más tareas a la vez sobre el mismo repositorio. | Cada tarea en su worktree y su rama; avanzan en paralelo; la web avisa si sus cambios se solapan antes de la entrega (D-13). |
 | CU-02 | Propietario | Conversar con Claude sobre un repositorio sin crear un Job (preguntas). | Respuestas en streaming; sesión reanudable. |
 | CU-03 | Propietario | Crear un Job «feature» desde el móvil y cerrar el navegador. | El Job avanza; al volver se ve el historial completo. |
 | CU-04 | Propietario | Aprobar un plan antes de la implementación (opcional según plantilla). | El Job pasa de `WAITING_APPROVAL(plan)` a `IMPLEMENTING`. |
@@ -213,7 +216,7 @@ Decisiones principales:
 | `api` | Rutas REST, SSE, autenticación, CSRF, servir la SPA. |
 | `core.jobs` | Entidad Job, máquina de estados, transiciones atómicas, IDs `JOB-000184`. |
 | `core.workflow` | Plantillas (trivial, feature, security), selección, contador de iteraciones. |
-| `core.scheduler` | Cola FIFO, concurrencia (1 Job activo por repositorio, N globales), reintentos con backoff. |
+| `core.scheduler` | Cola FIFO, concurrencia (varios Jobs por repositorio, cada uno en su worktree; límites configurables por repositorio y global, D-13), reintentos con backoff. |
 | `core.policy` | Carga de políticas YAML, evaluación `allow/ask/deny` y nivel de riesgo, concesiones por Job. |
 | `core.approvals` | Solicitudes de aprobación, decisiones, expiración, reanudación del workflow. |
 | `core.events` | Event bus en proceso + persistencia append-only con `seq` monotónico por Job. |
@@ -447,7 +450,7 @@ class OrchestratorAdapter(Protocol):
 | Sesión fija por Job | `--session-id <uuid>` en el primer turno, `--resume <uuid>` en los siguientes | Flags CONFIRMED; reanudación tras reiniciar el proceso padre: NEEDS POC-07 |
 | Salida estructurada | `--json-schema <schema>` | Flag CONFIRMED; forma del resultado en stream-json: NEEDS POC-01 |
 | Herramientas RelayForge | `--mcp-config <archivo del job>` (sin `--strict-mcp-config`, para conservar los MCP del usuario) | Flag CONFIRMED; convivencia con los MCP del usuario: NEEDS POC-04 |
-| Restringir herramientas | `--allowed-tools "Read Grep Glob mcp__relayforge__*"` + `--disallowed-tools "Edit Write Bash(codex*) Bash(agy*) Bash(git push*)"` + `--permission-mode` (valor por definir) | Flags CONFIRMED; semántica exacta en `-p`: NEEDS POC-04 |
+| Restringir herramientas | `--allowed-tools "Read Grep Glob mcp__relayforge__*"` + `--disallowed-tools "Edit Write Bash(codex:*) Bash(codex *) Bash(agy:*) Bash(agy *) Bash(git push:*)"` + `--permission-mode` (valor por definir) | Flags CONFIRMED; semántica exacta en `-p`: NEEDS POC-04 |
 | Aprobaciones de permisos | `--permission-prompts host` / `--permission-prompt-tool` (MCP) | Flags CONFIRMED en la ayuda/documentación; comportamiento: NEEDS POC-08 |
 | Instrucciones de rol | `--append-system-prompt` (conserva el system prompt por defecto, CLAUDE.md y skills) | Flag CONFIRMED; que las skills sigan activas en `-p`: NEEDS POC-01 |
 | Salud | `claude --version`, `claude auth status`, `claude doctor` | Subcomandos CONFIRMED; formato de salida: NEEDS POC-09 |
@@ -610,7 +613,7 @@ Los worktrees viven **fuera** del repositorio principal y fuera de OneDrive, en 
 
 ### 21.2 Locking
 
-- Un Job activo por repositorio en el MVP (lock en la base de datos `repo_locks(repo_id, job_id)` + `git worktree lock` con motivo).
+- Varios Jobs activos por repositorio, cada uno en su propio worktree y rama `agent/job-N` (D-13). Cada Job bloquea **su** worktree (`git worktree lock` con motivo); el número de Jobs activos por repositorio lo limita `max_active_jobs_per_repo` (por defecto 2).
 - Las operaciones git sobre el repositorio principal (`worktree add/remove`, `fetch`) se serializan con un `asyncio.Lock` por repositorio, porque Git crea `.git/index.lock` y `worktrees/…/locked`.
 - Nunca hay dos agentes escribiendo en el mismo worktree: el implementador escribe; el auditor y los checks se ejecutan *después*, de forma secuencial.
 
@@ -621,7 +624,7 @@ Los worktrees viven **fuera** del repositorio principal y fuera de OneDrive, en 
 
 ### 21.4 Concurrencia
 
-MVP: un Job activo por repositorio y un máximo global configurable (por defecto 2), limitado sobre todo por la cuota de los agentes. Varios Jobs en paralelo sobre el mismo repositorio son técnicamente posibles con worktrees, pero se dejan para LATER porque complican los conflictos de entrega.
+MVP (D-13, 2026-10-03): varios Jobs en paralelo sobre el mismo repositorio, cada uno en su worktree y su rama. Límites configurables por repositorio (`max_active_jobs_per_repo`, por defecto 2) y global (`RELAYFORGE_MAX_ACTIVE_JOBS`, por defecto 2); el límite real lo pone la cuota de los agentes. Los conflictos solo aparecen al integrar: la entrega (Fase 7) hace push de cada rama `agent/job-N` por separado y **nunca hace merge**. Si dos Jobs del mismo repositorio modifican archivos en común (intersección de los archivos de sus diffs), la web lo advierte antes de aprobar la entrega.
 
 ### 21.5 Casos especiales
 
@@ -669,7 +672,7 @@ Detalles:
 - Reconexión: el cliente envía `Last-Event-ID`; el servidor reenvía `events WHERE seq > id` y luego eventos en vivo, sin huecos ni duplicados (el cliente deduplica por `seq`).
 - Heartbeat SSE `: ping` cada 15 s (los móviles y proxies cortan conexiones inactivas).
 - **Fragmentos de texto del agente** (`agent.message.delta`): se transmiten en vivo pero se **persisten consolidados** (un evento por mensaje completo, más deltas coalescidos cada ~500 ms), para no inflar la base de datos.
-- **Límite de conexiones HTTP/1.1** (6 por origen): un stream por pestaña con canal multiplexado (`/api/stream?job=…&global=1`); `tailscale serve` ofrece HTTPS, lo que permite HTTP/2 (NEEDS POC-11).
+- **Límite de conexiones HTTP/1.1** (6 por origen): un stream por pestaña según la vista: `?conversation={id}`, `?job={id}` o `?scope=global` (sección 28); `tailscale serve` ofrece HTTPS, lo que permite HTTP/2 (NEEDS POC-11).
 
 ## 24. Persistencia
 
@@ -773,7 +776,7 @@ Prefijo `/api`. JSON. Autenticación con la cookie de sesión. Mutaciones con `I
 | GET | `/doctor` | Resultado del diagnóstico |
 | GET | `/agents` | Estado de los agentes (`agent_health`) |
 | POST | `/agents/{id}/check` | Forzar un health check (deep opcional) |
-| GET/POST | `/repos` | Listar/registrar (`{name, path, default_branch, check_commands[], policy_profile}`) |
+| GET/POST | `/repos` | Listar; registrar uno existente (`{mode: "register", name, path, default_branch, check_commands[], policy_profile}`) o crear uno nuevo (`{mode: "create", name}` → `git init` en `<projects_root>/<name>` con commit inicial vacío; D-14) |
 | GET/PATCH/DELETE | `/repos/{id}` | Ver/editar/desactivar (sin borrar datos) |
 | GET | `/repos/{id}/status` | Rama, cambios sin commit, LFS/submódulos |
 | GET/POST | `/jobs` | Listar con filtros/crear (`{repo_id, title, request, workflow: auto|trivial|feature|security, base_ref?}`) |
@@ -798,7 +801,7 @@ Errores: `{"error": {"code": "job_invalid_transition", "message": "...", "detail
 
 ## 28. Eventos SSE
 
-Endpoint: `GET /api/stream?job={id}` (eventos de un Job) y `GET /api/stream?scope=global` (cambios de estado de Jobs, aprobaciones y salud de agentes). Formato:
+Endpoints: `GET /api/stream?conversation={id}` (conversación con el orquestador; Fase 1), `GET /api/stream?job={id}` (eventos de un Job) y `GET /api/stream?scope=global` (cambios de estado de Jobs, aprobaciones y salud de agentes). Cada stream de conversación o de Job tiene su propio `seq`, que es el `id:` del SSE; la reanudación por `Last-Event-ID` aplica a esos streams de un solo ámbito, y el global se resincroniza recargando el estado (D-16). Formato:
 
 ```
 id: 1842
@@ -844,6 +847,8 @@ Stack: React + TypeScript + Vite; TanStack Query (estado del servidor); React Ro
 | Métricas | SHOULD | Tabla simple |
 
 Diseño responsive desde el inicio (una columna en móvil). Sin librería de componentes pesada hasta la Fase 11.
+
+**Modelo de interacción (D-15): interfaz de agente de IA.** La pantalla principal es una conversación con el orquestador, no un formulario. Barra lateral: repositorios y, dentro de cada uno, sus tareas y conversaciones con su estado en vivo (varias en curso a la vez, D-13), más «Nuevo repositorio» (crear o registrar, D-14). Panel principal: el chat, con la respuesta en streaming y, plegada bajo cada respuesta, la actividad del agente (fases, comandos, archivos, tests, auditoría). Las tareas se crean desde el chat (el orquestador propone y el usuario confirma) o con «New Task». Las pantallas de la tabla anterior son vistas dentro de este esquema. La estructura se construye desde la Fase 1; el estilo visual es de la Fase 11. Texto plano en las respuestas hasta que se decida Markdown (D-16, C-3).
 
 ## 30. Estructura propuesta del repositorio
 
@@ -993,7 +998,7 @@ Comando sugerido para cada fase: `$plan-driven-development Ejecuta únicamente l
 
 ### Fase 0 — POCs de validación técnica
 
-- Estado: En curso. 0A y 0B completadas (2026-10-02). 0C verificada parcialmente en laptop (2026-10-03): los tres modos de POC-10 autenticaron las CLIs; falta el `push` del criterio 38.2 y revalidar las etiquetas de evidencia tras registrar de nuevo las tareas. POC-11 confirmó `/whoami` y SSE móvil durante 600 s (observación del usuario); no se probó falsificación externa y, tras el reinicio, la app no se inició y Serve devolvió HTTP 502 · Esfuerzo: M
+- Estado: **Completada** (2026-10-03) conforme a sus criterios de aceptación explícitos (más abajo). 0A y 0B se completaron el 2026-10-02; 0C se ejecutó en la laptop el 2026-10-03. POC-10 y POC-11 se cierran como **PARCIALES**: no figuran entre esos criterios, así que no impiden el cierre, pero sus reservas siguen abiertas (ver «Cierre de la Fase 0») · Esfuerzo: M
 - Objetivo: validar los supuestos NEEDS POC antes de fijar los contratos de los adapters (sección 38).
 - Dependencias: D-01 (ubicación del repositorio) resuelta; aprobación del plan.
 - Tareas: POC-01 a POC-11 como scripts independientes en `pocs/`; registrar comandos, versiones, salidas anonimizadas y veredicto en `docs/POC_RESULTADOS.md`. Las POCs con agentes reales se ejecutan en la PC; POC-10 y POC-11 en la laptop.
@@ -1002,11 +1007,38 @@ Comando sugerido para cada fase: `$plan-driven-development Ejecuta únicamente l
 - Pruebas: cada POC tiene su criterio PASS/FAIL (sección 38.2).
 - Criterios de aceptación: POC-01, 02, 03, 05, 06 y 07 en PASS o con alternativa documentada; el plan está actualizado con los resultados.
 - Riesgos: consumo de cuota (prompts mínimos); comportamientos distintos entre PC y laptop (POC-10 y 11 en la laptop).
-- Reversión: borrar `pocs/` no afecta a nada.
+- Reversión: borrar `pocs/` no afecta al producto. Las tareas `RelayForge-POC10-*` se retiraron el 2026-10-03 y se comprobó que no quedan registradas (R-3 cerrada). La configuración de `tailscale serve` de POC-11 queda fuera del repositorio; no se verificó si se restableció (`tailscale serve reset`).
+
+#### Cierre de la Fase 0 (2026-10-03)
+
+**Criterios de aceptación explícitos** (detalle y evidencia en `docs/POC_RESULTADOS.md`):
+
+| Criterio | Resultado |
+|---|---|
+| POC-01 | PASS (C3 y C4 validados manualmente). El texto del asistente llega por mensaje completo, no token a token; `--include-partial-messages` no se ha probado |
+| POC-02 | PASS (C2 validado manualmente) |
+| POC-03 | PASS con alternativa documentada: el veredicto se lee de la línea `ESTADO:` (agy no respeta `--json-schema`) y el auditor no ejecuta comandos (ADENDA 2) |
+| POC-05 | PASS (6/6) |
+| POC-06 | PASS (sintético 10/10; Claude, Codex y agy reales, sin supervivientes) |
+| POC-07 | PASS en los escenarios A, B y B-early; C5 no concluyente, con regla de diseño documentada |
+| Plan actualizado con los resultados | Sí: matriz 38.1, adendas 1 y 2 de `docs/specs/FASE_0A.md`, T9 y registro de cambios |
+
+**POC-10 — PARCIAL.** En la laptop, las tres CLIs respondieron bajo tarea programada en los modos `Logon`, `StartupS4U` y `StartupPassword` (sondas profundas con código 0 en la primera ronda, reintentos individuales). En el arranque automático simultáneo del 2026-10-03 (≈10:08–10:10, UTC−05:00) cada tarea generó su propio JSON etiquetado (`20261003-100945-StartupPassword-10084.json`, `20261003-100946-StartupS4U-10092.json` y `20261003-100947-Logon-12248.json`), con `LastTaskResult=0` y con `git ls-remote --heads` (solo lectura) en código 0, sin tiempo agotado ni error de credenciales, contra un remoto privado. Según Codex, en los tres JSON Claude, Codex y agy figuran `AVAILABLE` y la sonda profunda de cada CLI terminó con código 0 y resultado no vacío. Con ello queda revalidada la corrección del runner (etiqueta, PID y creación exclusiva). La lectura de `ls-remote` no equivale a permiso de escritura y no se ejecutó `git push`.
+
+**POC-11 — PARCIAL.** Se conserva solo lo ya documentado a partir de la observación del usuario: `/whoami` desde el móvil, SSE de 600 s, la configuración de Serve persiste, HTTP 502 tras el reinicio porque `app.py` no arranca sola, falsificación local de cabeceras confirmada y falsificación desde otro dispositivo no probada.
+
+**Reservas.** R-1, R-2 y R-4 siguen abiertas; R-3 y R-5 están cerradas. Ninguna bloquea el cierre de la Fase 0. Las abiertas las heredan las fases que declaran dependencia de POC-10 y POC-11 (sobre todo las Fases 4 y 7), que deben revisarlas al iniciarse:
+
+1. **R-1 · Escritura remota no validada (POC-10).** El criterio de 38.2 que exige `git push` con Git Credential Manager sigue **parcial**: solo se observó lectura (`ls-remote`), no escritura remota. `docs/specs/FASE_0C.md` define el chequeo Git como solo lectura; esa discrepancia con 38.2 no se modifica en este cierre. Ver D-11.
+2. **R-2 · Discrepancia de tiempos (POC-10).** Los tres JSON comparten `boot_time` 10:08:32.357811 -05:00 y marcan `started_at` 10:09:45.545 (StartupPassword), 10:09:46.744 (StartupS4U) y 10:09:47.214 (Logon): 73, 74 y 75 s tras el arranque, dentro de una ventana de 1,67 s. `Get-ScheduledTaskInfo` mostró `LastRunTime=10:08:08` para las tres tareas. El usuario reporta unos tres minutos en la pantalla de bloqueo antes de iniciar sesión. `started_at` se captura al terminar las sondas, no al iniciar la tarea; los JSON registran `session_id=0/0/1` y `uptime_seconds=18/18/18`, pero estos datos no reconcilian los horarios. Hasta contrastar los registros de eventos de Windows no se afirma que los modos de arranque se ejecutaran antes de cualquier sesión interactiva, ni que el JSON `Logon` corresponda al inicio de sesión manual. El resto de la evidencia no se invalida.
+3. **R-3 · Limpieza administrativa — cerrada (2026-10-03).** El usuario retiró las tareas `RelayForge-POC10-*`; la consulta posterior `Get-ScheduledTask -TaskName 'RelayForge-POC10-*'` no devolvió tareas.
+4. **R-4 · POC-11 incompleta.** Se divide (2026-10-03): **R-4a** falsificación de cabeceras desde otro dispositivo, que se prueba antes de la Fase 1; **R-4b** arranque automático de la app, que se cierra con el criterio 3 de la Fase 4 (el servicio real de RelayForge). Falta probar la falsificación de cabeceras desde otro dispositivo y resolver el arranque de la app tras reiniciar (hoy es manual). La identidad de Tailscale no puede ser el único control de acceso (T9).
+5. **R-5 · Estado de las CLIs en el arranque automático — cerrada (2026-10-03).** Antes era un dato no verificado. Codex confirmó después, en los tres JSON de las 10:09 (`StartupPassword`, `StartupS4U` y `Logon`), que Claude, Codex y agy figuran `AVAILABLE` y que la sonda profunda de cada CLI terminó con código 0 y resultado no vacío. Claude no reabrió los JSON y solo registra lo confirmado por Codex.
 
 ### Fase 1 — Slice: web → backend → Claude → streaming → respuesta
 
-- Estado: Pendiente de aprobación · Esfuerzo: M
+- Estado: Aprobada (2026-10-03, aprobación en bloque D-12) · Esfuerzo: M
+- Especificación técnica: `docs/specs/FASE_1.md`, alineada con las secciones 12, 23, 29 y 31 y con los conflictos C-1, C-2 y C-3 resueltos (D-16). El streaming de fragmentos queda fijado por la sección 23; POC-01b aún debe validar `--include-partial-messages` antes de cerrar la fase. El alcance y los criterios de esta fase no cambian.
 - Objetivo: el primer valor visible. Enviar un mensaje desde el navegador (local) y ver la respuesta de Claude Code real en streaming.
 - Dependencias: Fase 0 (POC-01).
 - Tareas: esqueleto del repositorio (pyproject con uv, `AGENTS.md`, `CLAUDE.md`, `docs/ESTADO_TRABAJO.md`, LICENSE Apache-2.0, `.gitignore`, `.env.example`); `settings`; SQLite + Alembic con `conversations`/`messages`/`events` mínimos; `adapters/base.py` + `adapters/claude` (solo chat); `process/supervisor.py` básico (lanzar, leer el archivo, kill); `GET /api/stream` SSE; `POST /api/conversations/{id}/messages`; web mínima (lista de conversaciones + chat); `relayforge serve`.
@@ -1019,7 +1051,7 @@ Comando sugerido para cada fase: `$plan-driven-development Ejecuta únicamente l
 
 ### Fase 2 — Jobs persistentes, máquina de estados y recuperación básica
 
-- Estado: Pendiente de aprobación · Esfuerzo: M
+- Estado: Aprobada (2026-10-03, aprobación en bloque D-12) · Esfuerzo: M
 - Objetivo: que toda tarea sea un Job con estados formales, eventos persistidos, SSE con reanudación y reconciliación al reiniciar. Workflow provisional: solo `PLANNING` con Claude (plan estructurado) → `COMPLETED`.
 - Dependencias: Fase 1; POC-07.
 - Tareas: tablas `jobs`, `job_steps`, `events`, `artifacts`; `core/states.py` (tabla completa de la sección 11, aunque solo se usen algunos estados); `core/jobs.py`; `core/events.py` (persistir y publicar); `core/scheduler.py` (cola, 1 por repositorio); `process/reconcile.py`; `OrchestratorAdapter.plan()` con `--json-schema`; `POST /jobs`, `GET /jobs/{id}`, `/jobs/{id}/events`, `cancel`; pantallas Dashboard, New Task y Job Detail (timeline + Activity).
@@ -1032,20 +1064,20 @@ Comando sugerido para cada fase: `$plan-driven-development Ejecuta únicamente l
 
 ### Fase 3 — Repositorios, worktrees, Codex implementador y diff
 
-- Estado: Pendiente de aprobación · Esfuerzo: L
+- Estado: Aprobada (2026-10-03, aprobación en bloque D-12) · Esfuerzo: L
 - Objetivo: workflow `plan → implement` en un worktree aislado con Codex real y el diff visible.
 - Dependencias: Fase 2; POC-02, POC-05.
-- Tareas: `repositories` + `relayforge repo add` + pantalla Repositories; `git/worktrees.py` (crear, bloquear, prune, longpaths); `adapters/codex` (localización del ejecutable, JSONL, `--output-schema`, resume); generación del brief desde el plan; verificación posterior (diff no vacío, nada fuera del worktree); pestaña Changes/Diff; evento `file.changed`.
+- Tareas: `repositories` + `relayforge repo add` + pantalla Repositories; **crear un repositorio nuevo** (`git init` bajo `projects_root`, nombre validado, commit inicial vacío; D-14); `git/worktrees.py` (crear, bloquear, prune, longpaths; **varios worktrees simultáneos por repositorio**, D-13); `adapters/codex` (localización del ejecutable, JSONL, `--output-schema`, resume); generación del brief desde el plan; verificación posterior (diff no vacío, nada fuera del worktree); pestaña Changes/Diff; evento `file.changed`.
 - Archivos: `git/`, `adapters/codex/`, `core/workflow.py` (versión inicial), `web/src/pages/{Repositories,JobDetail/Diff}`.
 - Entregable: Job sobre un repositorio de juguete → Codex implementa en `agent/job-N` → el diff aparece en la web; el repositorio principal queda intacto.
 - Pruebas: integración con repositorios git temporales y fake codex; caso «Codex escribe fuera del worktree» (fake) detectado; smoke real opt-in.
-- Criterios de aceptación: (1) worktree y rama creados; (2) `git status` del repositorio principal sin cambios; (3) el diff mostrado coincide con `git diff base_sha`; (4) un repositorio con cambios sin commit muestra la advertencia; (5) se registra el `thread_id` de Codex.
+- Criterios de aceptación: (1) worktree y rama creados; (2) `git status` del repositorio principal sin cambios; (3) el diff mostrado coincide con `git diff base_sha`; (4) un repositorio con cambios sin commit muestra la advertencia; (5) se registra el `thread_id` de Codex; (6) crear un repositorio nuevo desde la web lo deja registrado, con commit inicial y sin salir de `projects_root` (D-14); (7) dos Jobs simultáneos sobre el mismo repositorio trabajan en worktrees y ramas distintos sin interferir (D-13).
 - Riesgos: sandbox de Codex en Windows (ya conocido); rutas largas.
 - Reversión: `git worktree remove` + borrar la rama `agent/*` de pruebas.
 
 ### Fase 4 — Acceso remoto mínimo seguro y despliegue en la laptop
 
-- Estado: Pendiente de aprobación · Esfuerzo: M
+- Estado: Aprobada (2026-10-03, aprobación en bloque D-12) · Esfuerzo: M
 - Objetivo: usar RelayForge desde el móvil vía Tailscale, ejecutándose en la laptop como servicio.
 - Dependencias: Fase 3; POC-10, POC-11.
 - Tareas: autenticación (pairing con código de un solo uso + cookie de sesión + allowlist de `Tailscale-User-Login` + verificación de Origin y CSRF); bloqueo de bind no local; `relayforge doctor` (runtime + agentes, con `--fingerprint/--compare`); pantalla Agents status; `scripts/register-task.ps1`; guía `docs/install-windows.md`; despliegue en la laptop.
@@ -1058,7 +1090,7 @@ Comando sugerido para cada fase: `$plan-driven-development Ejecuta únicamente l
 
 ### Fase 5 — Checks/tests
 
-- Estado: Pendiente de aprobación · Esfuerzo: S
+- Estado: Aprobada (2026-10-03, aprobación en bloque D-12) · Esfuerzo: S
 - Objetivo: `implement → checks` con los resultados visibles y devueltos a Codex en las iteraciones.
 - Dependencias: Fase 3.
 - Tareas: `adapters/checks` (argv declarado, entorno filtrado, timeout, Job Object, parseo JUnit/pytest cuando existe); estado `TESTING`; evento `checks.result`; timeline «Tests ✓ 147 passed».
@@ -1070,7 +1102,7 @@ Comando sugerido para cada fase: `$plan-driven-development Ejecuta únicamente l
 
 ### Fase 6 — Auditor Antigravity, triage y bucle de revisión
 
-- Estado: Pendiente de aprobación · Esfuerzo: L
+- Estado: Aprobada (2026-10-03, aprobación en bloque D-12) · Esfuerzo: L
 - Objetivo: el ciclo completo feature: audit → triage (Claude) → revisión (Codex resume) → reauditoría, máximo 3.
 - Dependencias: Fase 5; POC-03.
 - Tareas: `adapters/antigravity` (gate de hooks, despachador de checks, hashes, veredicto estructurado); `relayforge gate` y `check-dispatch` como subcomandos internos; tabla `findings`; `OrchestratorAdapter.triage()`; estados `AUDITING`, `TRIAGING`, `REVISING`; `WAITING_APPROVAL(iteration_limit)`; pestaña Audit; plantilla `feature`.
@@ -1082,19 +1114,19 @@ Comando sugerido para cada fase: `$plan-driven-development Ejecuta únicamente l
 
 ### Fase 7 — Policy Engine mínimo, aprobaciones y entrega
 
-- Estado: Pendiente de aprobación · Esfuerzo: M
+- Estado: Aprobada (2026-10-03, aprobación en bloque D-12) · Esfuerzo: M
 - Objetivo: operaciones sensibles detenidas por política; aprobaciones once/job; commit y push hechos por el Core.
 - Dependencias: Fase 6; POC-08.
-- Tareas: `core/policy.py` (YAML, precedencia, deny gana, elevación de workflow); `core/approvals.py` + `approval_grants`; traducción de la política a flags de Claude, sandbox de Codex y gate de `agy`; `FINAL_REVIEW` + `final-review.md`; `DELIVERING` (commit con el mensaje aprobado, push de la rama `agent/*`, nunca a ramas protegidas); pantalla Approvals.
+- Tareas: `core/policy.py` (YAML, precedencia, deny gana, elevación de workflow); `core/approvals.py` + `approval_grants`; traducción de la política a flags de Claude, sandbox de Codex y gate de `agy`; `FINAL_REVIEW` + `final-review.md`; `DELIVERING` (commit con el mensaje aprobado, push de la rama `agent/*`, nunca a ramas protegidas ni merge); aviso de solapamiento de archivos entre Jobs del mismo repositorio antes de aprobar la entrega (D-13); pantalla Approvals.
 - Entregable: Job feature completo hasta el push aprobado desde el móvil.
 - Pruebas: matriz de políticas; approve once vs for job; rechazo; invalidación si el worktree cambia tras aprobar; force push denegado.
-- Criterios de aceptación: (1) ningún commit ni push sin una aprobación registrada; (2) «Approve for job» no se extiende a otros Jobs; (3) `deny` no se puede aprobar; (4) el push usa el sha aprobado.
+- Criterios de aceptación: (1) ningún commit ni push sin una aprobación registrada; (2) «Approve for job» no se extiende a otros Jobs; (3) `deny` no se puede aprobar; (4) el push usa el sha aprobado; (5) con dos Jobs del mismo repositorio que tocan un archivo común, la aprobación de entrega muestra el aviso de solapamiento (D-13).
 - Riesgos: credenciales Git en una sesión no interactiva (Git Credential Manager) → POC-10.
 - Reversión: `delivery.approval: ask` y desactivar push en la política.
 
 ### Fase 8 — Robustez: cancelación, timeouts, rate limits y reconciliación completa
 
-- Estado: Pendiente de aprobación · Esfuerzo: M
+- Estado: Aprobada (2026-10-03, aprobación en bloque D-12) · Esfuerzo: M
 - Objetivo: los escenarios de la sección 25.2 se comportan como está especificado.
 - Dependencias: Fase 7; POC-06, POC-07, POC-09.
 - Tareas: Job Objects por paso; watchdog/heartbeat; timeouts por paso; clasificación de errores (rate limit, auth, red, salida inválida); `WAITING_RETRY`; reanudar `INTERRUPTED` (sesión o reintento del paso); limpieza y retención de worktrees; `agent_health` actualizado por eventos.
@@ -1106,7 +1138,7 @@ Comando sugerido para cada fase: `$plan-driven-development Ejecuta únicamente l
 
 ### Fase 9 — Workflows dinámicos y métricas
 
-- Estado: Pendiente de aprobación · Esfuerzo: S
+- Estado: Aprobada (2026-10-03, aprobación en bloque D-12) · Esfuerzo: S
 - Objetivo: plantillas trivial/feature/security con selección auto + elevación por política; métricas básicas.
 - Dependencias: Fase 8.
 - Tareas: YAMLs de plantillas; `suggested_workflow` en el plan; elevación por rutas; perfil de auditoría `security`; `/metrics/summary` + tabla en la web.
@@ -1115,7 +1147,7 @@ Comando sugerido para cada fase: `$plan-driven-development Ejecuta únicamente l
 
 ### Fase 10 — Endurecimiento de seguridad e instalación open-source (cierre del MVP)
 
-- Estado: Pendiente de aprobación · Esfuerzo: M
+- Estado: Aprobada (2026-10-03, aprobación en bloque D-12) · Esfuerzo: M
 - Objetivo: cumplir el threat model del MVP y dejar el repositorio instalable por terceros.
 - Dependencias: Fase 9.
 - Tareas: redactor completo + tests con corpus; CSP; sanitización de markdown; verificación de symlinks; escaneo de secretos del diff antes de commit (SHOULD); README, SECURITY.md, CONTRIBUTING.md, `install-windows.md`; CI (lint, tests, gitleaks, rutas personales, Semgrep); revisión final de que el repositorio no contiene datos personales; validación de los criterios de la sección 40 en la laptop.
@@ -1141,7 +1173,7 @@ Comando sugerido para cada fase: `$plan-driven-development Ejecuta únicamente l
 | L-05 | Adapters adicionales (Gemini CLI, OpenCode, Aider) y `CodexOrchestrator` |
 | L-06 | Modo «Claude-driven» (orquestador con control de bucle mediante MCP) como plantilla opcional |
 | L-07 | Exposición por Internet con dominio propio (ver 37.1) |
-| L-08 | Varios Jobs por repositorio; merge asistido; PRs automáticas con `gh` |
+| L-08 | Merge asistido; PRs automáticas con `gh` (varios Jobs por repositorio pasó al MVP: D-13) |
 | L-09 | Clientes: CLI cliente, bots (Telegram/Discord), app móvil |
 | L-10 | Terminal web (WebSocket/PTY) |
 | L-11 | `codex app-server` y `--input-format stream-json` persistente para menor latencia |
@@ -1180,7 +1212,7 @@ Comando sugerido para cada fase: `$plan-driven-development Ejecuta únicamente l
 | Skills, CLAUDE.md y MCP del usuario activos en `-p` | **CONFIRMED** (evento `system/init`) | POC-01 |
 | `--session-id` + `--resume` mantienen el contexto entre procesos | **CONFIRMED** (POC-01 y POC-07). Una sesión muerta antes del primer mensaje del modelo **no** se puede reanudar (`No conversation found`) → reintentar el paso | POC-01/07 |
 | `--json-schema` devuelve JSON válido en el evento de resultado | **CONFIRMED**: `result.structured_output`; el esquema no admite `$schema` 2020-12 | POC-01 |
-| Autenticación no interactiva con la suscripción (sin API key) en `-p` | **CONFIRMED** en sesión interactiva (PC, sonda POC-10); bajo tarea programada en la laptop: NEEDS POC (pendiente del usuario) | POC-10 |
+| Autenticación no interactiva con la suscripción (sin API key) en `-p` | **CONFIRMED** en sesión interactiva (PC, sonda POC-10) y bajo tarea programada en la laptop (`Logon`, `StartupS4U` y `StartupPassword`: turno mínimo con código 0 en cada CLI: primera ronda y, según Codex, los tres JSON etiquetados del arranque simultáneo). Que funcione **sin ninguna sesión interactiva previa** no está establecido: discrepancia de tiempos sin reconciliar (Fase 0, R-2) | POC-10 |
 | `--allowed-tools/--disallowed-tools` bloquean Bash con patrón en `-p` | **CONFIRMED** (`Bash(codex:*)` y `Bash(codex *)`; denegaciones en `result.permission_denials`) | POC-04 |
 | El servidor MCP stdio de RelayForge se carga junto a los MCP del usuario | **CONFIRMED** (mcp 2.x `MCPServer`; `--permission-mode` debe fijarse porque se hereda `auto`) | POC-04 |
 | `--permission-prompt-tool`/`--permission-prompts host` permite aprobaciones remotas | `--permission-prompt-tool`: **CONFIRMED** (entrada `{tool_name, input}`; respuesta `{behavior: allow|deny}` como un único bloque de texto). Las lecturas Bash se autoaprueban sin consulta. `--permission-prompts host`: no probado | POC-08 |
@@ -1195,7 +1227,7 @@ Comando sugerido para cada fase: `$plan-driven-development Ejecuta únicamente l
 | `--mode plan` es suficiente para solo lectura | UNSAFE ASSUMPTION | — |
 | Matar el árbol de procesos en Windows sin huérfanos (Job Objects) | **CONFIRMED** (sintético 10/10; Claude con 67 descendientes, Codex y agy reales) | POC-06 |
 | Procesos de agente sobreviven al backend con stdout a archivo y breakaway del Job | **CONFIRMED** (`JobObject` sin `KILL_ON_JOB_CLOSE` + stdout a archivo; lectura reanudada por offset sin pérdidas) | POC-07 |
-| Las tres CLIs funcionan desde una tarea programada al iniciar el equipo (credenciales, perfil, Credential Manager) | **PARCIAL**: Claude, Codex y agy `AVAILABLE` con turno mínimo en Logon (sesión 1), StartupS4U (sesión 0) y StartupPassword (sesión 0); Git Credential Manager no queda validado por `ls-remote` anónimo y falta el `push` de 38.2 | POC-10 |
+| Las tres CLIs funcionan desde una tarea programada al iniciar el equipo (credenciales, perfil, Credential Manager) | **PARCIAL**: Claude, Codex y agy `AVAILABLE` con turno mínimo en Logon (sesión 1), StartupS4U (sesión 0) y StartupPassword (sesión 0) en reintentos individuales. El arranque simultáneo del 2026-10-03 generó tres JSON etiquetados con `LastTaskResult=0`; las tres CLIs figuran `AVAILABLE` y sus sondas profundas terminaron con código 0 y resultado no vacío. `git ls-remote --heads` terminó en código 0 contra un remoto privado en los tres modos (lectura, no escritura). **Falta el `push` de 38.2** (R-1) y reconciliar la discrepancia temporal (R-2). Las tareas se retiraron (R-3 cerrada) | POC-10 |
 | `tailscale serve` en Windows añade las cabeceras `Tailscale-User-Login` y soporta SSE | **PARCIAL**: `/whoami` y SSE móvil 600 s observados por el usuario; falsificación externa no probada; proceso local puede falsificar cabeceras contra `127.0.0.1`; tras reinicio `app.py` no levantó y Serve dio HTTP 502 | POC-11 |
 | Formatos estables entre versiones | UNSAFE ASSUMPTION | fixtures por versión |
 | Hooks de Codex como punto de política por comando | NEEDS POC | LATER |
@@ -1216,7 +1248,7 @@ Comando sugerido para cada fase: `$plan-driven-development Ejecuta únicamente l
 | **POC-10** Servicio en la laptop | Arranque sin intervención | Registrar la tarea programada (al iniciar el sistema vs al iniciar sesión, «ejecutar tanto si el usuario inició sesión como si no»); reiniciar; ejecutar un turno mínimo de cada CLI y un `git push` a un repositorio de prueba | Las tres CLIs autenticadas y el push con Git Credential Manager | PASS: todo funciona sin iniciar sesión, o se documenta que requiere inicio de sesión automático. FAIL: las credenciales no están disponibles → exigir sesión iniciada | Fase 4 |
 | **POC-11** Tailscale serve | Identidad + SSE | `tailscale serve` hacia `127.0.0.1:8787`; endpoint que imprime las cabeceras; stream SSE de 10 min desde el móvil | Llega `Tailscale-User-Login`; el SSE se mantiene con pings | PASS: cabeceras presentes y no falsificables desde fuera; SSE estable. FAIL: sin cabeceras → solo pairing por token | Fase 4 |
 
-**Estado laptop 0C (2026-10-03):** POC-10 permanece parcial: las pruebas de CLI por modo pasan, pero no se ejecutó el `push` del criterio anterior y `ls-remote` al remoto público no valida credenciales GCM. La especificación `docs/specs/FASE_0C.md` define el chequeo Git como solo lectura; esta discrepancia de alcance no se modifica en este cierre. POC-11 verificó `/whoami` y SSE móvil según observación del usuario; no verificó un intento de falsificación desde un dispositivo externo, confirmó que una cabecera se puede falsificar localmente y requiere inicio manual de `app.py` tras reiniciar. Ver `docs/POC_RESULTADOS.md`.
+**Estado laptop 0C (2026-10-03):** POC-10 permanece **parcial**: el arranque simultáneo generó tres JSON etiquetados (`LastTaskResult=0`; Claude, Codex y agy `AVAILABLE`, sondas profundas con código 0 y resultado no vacío; `git ls-remote --heads` en código 0, sin tiempo agotado ni error de credenciales, contra un remoto privado). No se ejecutó el `push` del criterio 38.2: lo observado es lectura, no escritura remota. La especificación `docs/specs/FASE_0C.md` define el chequeo Git como solo lectura; esta discrepancia de alcance no se modifica en este cierre. La discrepancia temporal entre `boot_time`, `LastRunTime`, `started_at` y la secuencia reportada de bloqueo/inicio de sesión sigue abierta (R-2); las tareas se retiraron y se confirmó que no quedan registradas (R-3 cerrada). POC-11 verificó `/whoami` y SSE móvil según observación del usuario; no verificó un intento de falsificación desde un dispositivo externo, confirmó que una cabecera se puede falsificar localmente y requiere inicio manual de `app.py` tras reiniciar. Ver `docs/POC_RESULTADOS.md`.
 
 ## 39. MVP exacto
 
@@ -1226,7 +1258,8 @@ Comando sugerido para cada fase: `$plan-driven-development Ejecuta únicamente l
 | Registro de repositorios con comandos de check declarados | MUST |
 | Conversación con Claude por Job (sesión reanudable) | MUST |
 | Jobs persistentes, máquina de estados formal, event log, SSE con reanudación | MUST |
-| Worktree + rama `agent/job-N` por Job; un Job activo por repositorio | MUST |
+| Worktree + rama `agent/job-N` por Job; varios Jobs simultáneos por repositorio (D-13) | MUST |
+| Crear un repositorio local nuevo desde la web, además de registrar existentes (D-14) | MUST |
 | ClaudeOrchestrator (plan, triage, revisión final con salida estructurada) | MUST |
 | CodexAdapter implementador con resume | MUST |
 | CheckRunner (comandos declarados, entorno filtrado, timeout) | MUST |
@@ -1285,8 +1318,14 @@ El usuario aceptó trabajar con las recomendaciones el 2026-10-02. Estado actual
 | D-06 | Repositorio objetivo de pruebas (distinto de RelayForge): un repositorio Git pequeño de juguete en la PC (y copia en la laptop) sobre el que trabajan los agentes en POCs y pruebas reales; no necesita remoto salvo un remoto de pruebas para POC-10 (push) | `C:\Dev\relayforge-sandbox-repo`, creado en la Fase 0 | Adoptada |
 | D-07 | Regla en `~/.claude/CLAUDE.md` global (PC y laptop): «si `RELAYFORGE_JOB_ID` está definido, no delegues fuera de RelayForge» | Sí, tras POC-04 | Adoptada (se aplicará tras POC-04, con autorización del cambio) |
 | D-08 | Laptop en Windows 10 Pro, última versión oficial (22H2) | Confirmar además la **inscripción en ESU** (estar en 22H2 actualizado no inscribe automáticamente); planificar Windows 11 o Linux antes de octubre de 2027 | Parcialmente resuelta |
-| D-09 | Inicio de sesión automático de la laptop si POC-10 lo exige | Decidir tras POC-10 | Pendiente de POC |
+| D-09 | Inicio de sesión automático de la laptop si POC-10 lo exige | Decidir tras POC-10 | Pendiente: `session_id=0` en StartupS4U/StartupPassword acredita la sesión del proceso, pero la discrepancia temporal R-2 impide concluir si corrieron antes de cualquier sesión interactiva; el `push` sigue pendiente (R-1) |
 | D-10 | Modelos y esfuerzo por defecto (Codex `high`, `agy` `low`, Claude por defecto) | Mantener los actuales, configurables | Adoptada |
+| D-11 | Validar la escritura Git (`git push`) bajo el modo de arranque que se elija, con Git Credential Manager (reserva R-1 de la Fase 0) | Antes de la Fase 7, y antes de la Fase 4 si el despliegue depende de credenciales Git en sesión no interactiva: probar `git push` a un remoto de pruebas **autorizado de forma explícita**, desde el modo de arranque candidato. No bloquea las Fases 1 a 3 | Pendiente (requiere autorización del usuario para el remoto de pruebas y para el `push`) |
+| D-12 | Ejecución de las Fases 1-10 | Aprobación en bloque (2026-10-03). Las fases se encadenan sin esperar aprobación entre ellas: especificación de Claude, implementación de Codex, auditoría de Antigravity y cierre verificado. Claude se detiene ante: un fallo no resuelto en 3 ciclos, una decisión de alcance o de arquitectura no prevista en el plan, una acción externa no autorizada (commit, push, despliegue) o una prueba manual que requiera al usuario (se agrupan). Cada fase sigue terminando en un estado funcional y verificable | **Resuelta**: aprobado por el usuario |
+| D-13 | Varias tareas simultáneas en el mismo repositorio | Cada Job en su worktree y su rama; límites por repositorio y global; push por rama sin merge; aviso de solapamiento antes de la entrega. Antes era L-08 | **Resuelta**: incluida en el MVP (2026-10-03) |
+| D-14 | Crear repositorios desde la web | Crear repositorios locales nuevos (`git init` bajo `projects_root`) además de registrar existentes. Crear remotos en GitHub queda fuera del MVP | **Resuelta**: incluida en el MVP, Fase 3 (2026-10-03) |
+| D-15 | Modelo de interacción de la web | Interfaz de agente de IA centrada en la conversación (sección 29). Estructura desde la Fase 1; estilo visual en la Fase 11 | **Resuelta** (2026-10-03) |
+| D-16 | Conflictos de la especificación de Fase 1 | C-1: un stream SSE por conversación (`?conversation={id}`), con `seq` por conversación. C-2: sin ajuste de host en la Fase 1; `RELAYFORGE_BIND` llega con la guardia de T10 en la Fase 4 o la 10. C-3: texto plano en las respuestas; Markdown se reevalúa en la Fase 11 | **Resuelta** (2026-10-03) |
 
 ## Fuentes consultadas (2026-10-02)
 
@@ -1308,3 +1347,6 @@ El usuario aceptó trabajar con las recomendaciones el 2026-10-02. Estado actual
 | 2026-10-02 | Fase 0A ejecutada: POC-01, 02, 03, 05 y 06 PASS; adendas 1 y 2 (contrato de agy; auditor sin comandos, checks antes de la auditoría); matriz 38.1 actualizada. Detalle en `docs/POC_RESULTADOS.md` | Evidencia de las POCs | Decisión técnica del arquitecto dentro de la Fase 0 aprobada |
 | 2026-10-02 | Fase 0B (POC-04, 07, 08, 09) completada; Fase 0C con scripts y partes locales; matriz 38.1 y T9 actualizados. Detalle en `docs/POC_RESULTADOS.md` | Evidencia de las POCs | Decisión técnica del arquitecto dentro de la Fase 0 aprobada |
 | 2026-10-03 | Resultados laptop de POC-10 y POC-11 registrados; runner POC-10 corregido para etiquetar y no sobrescribir JSON concurrentes. POC-10 sigue parcial por el `push` no ejecutado; POC-11 confirmó SSE móvil y registra HTTP 502 cuando la app no arranca tras reinicio | Verificación solicitada por el usuario y evidencia de la laptop | Dentro de Fase 0 aprobada; alcance Git push/solo lectura pendiente de reconciliación |
+| 2026-10-03 | Fase 0 cerrada (`Completada`) por sus criterios explícitos (POC-01, 02, 03, 05, 06 y 07). POC-10 y POC-11 quedan **parciales**: no se validó `git push` (solo lectura con `ls-remote`), la discrepancia temporal del modo `Logon` sigue abierta y las tareas `RelayForge-POC10-*` fueron retiradas (R-3 cerrada; R-1, R-2 y R-4 abiertas; R-5 cerrada tras verificar las CLIs en los tres JSON etiquetados). D-11 queda pendiente. Borrador de la especificación de Fase 1 en `docs/specs/FASE_1.md`; Fase 1 sigue `Pendiente de aprobación` y su alcance no cambia | Evidencia de la laptop y petición del usuario de cerrar la Fase 0 | Cierre solicitado por el usuario; alcance Git push/solo lectura (FASE_0C frente a 38.2) pendiente de reconciliación |
+| 2026-10-03 | Aprobación en bloque de las Fases 1-10 (D-12); varias tareas simultáneas por repositorio pasan al MVP (D-13, antes L-08); creación de repositorios locales (D-14); interfaz de agente de IA (D-15); conflictos de la especificación de Fase 1 resueltos (D-16); R-4 dividida en R-4a y R-4b; patrones de `--disallowed-tools` corregidos a los confirmados en POC-04; notación de streams SSE unificada | Decisiones del usuario | Aprobado por el usuario |
+| 2026-10-03 | POC-01b ejecutada: PASS. `--include-partial-messages` confirmado (fragmentos `stream_event`/`text_delta`; el `assistant` final repite el texto; razonamiento descartado). Especificación de la Fase 1 auditada por Antigravity (APROBADO CON OBSERVACIONES, incorporadas) | Evidencia de POC-01b y auditoría | Dentro de la Fase 1 aprobada (D-12) |

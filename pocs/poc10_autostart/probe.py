@@ -11,6 +11,8 @@ import re
 import subprocess
 import sys
 import time
+import stat
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -172,7 +174,7 @@ def _deep_command(agent: str, binary: str, cwd: Path) -> tuple[list[str], str | 
 
 
 def _commands(binary_names: dict[str, str], out_dir: Path, deep: bool,
-              git_remote: str | None, label: str) -> dict:
+              git_remote: str | None, git_push_remote: str | None, label: str) -> dict:
     commands: dict[str, object] = {"label": label}
     for agent, binary in binary_names.items():
         if agent == "claude":
@@ -189,6 +191,12 @@ def _commands(binary_names: dict[str, str], out_dir: Path, deep: bool,
                                              "--print-timeout", "60s"]} if deep else {})}
     if git_remote:
         commands["git_remote"] = ["git", "ls-remote", "--heads", git_remote]
+    if git_push_remote:
+        branch = _push_branch(label, datetime.now(timezone.utc), os.getpid())
+        commands["git_push"] = {
+            "push": ["git", "push", git_push_remote, f"HEAD:refs/heads/{branch}"],
+            "delete": ["git", "push", git_push_remote, "--delete", branch],
+        }
     return commands
 
 
@@ -196,6 +204,66 @@ def _label(value: str) -> str:
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,32}", value):
         raise argparse.ArgumentTypeError("label debe tener 1-32 caracteres: letras, números, _ o -")
     return value
+
+
+def _push_branch(label: str, now: datetime, pid: int) -> str:
+    return f"poc10/{label}-{now.astimezone(timezone.utc):%Y%m%d%H%M%S}-{pid}"
+
+
+def _credentials_error(result: dict) -> bool:
+    return bool(result["returncode"] and any(
+        marker in result["output"].casefold() for marker in
+        ("authentication failed", "could not read username", "terminal prompts disabled",
+         "permission denied", "access denied", "credentials")))
+
+
+def _rmtree(path: Path) -> None:
+    def make_writable(function, target, _error):
+        Path(target).chmod(stat.S_IWRITE | stat.S_IREAD)
+        function(target)
+
+    shutil.rmtree(path, onerror=make_writable)
+
+
+def _git_push_check(out_dir: Path, label: str, remote: str) -> dict:
+    root = out_dir / f"push-{label}-{os.getpid()}"
+    root.mkdir(parents=False, exist_ok=False)
+    branch = _push_branch(label, datetime.now(timezone.utc), os.getpid())
+    env = os.environ.copy()
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    env["GCM_INTERACTIVE"] = "never"
+    result = {"returncode": None, "timed_out": False, "credentials_error": False,
+              "branch_deleted": False, "delete_returncode": None}
+    try:
+        init = _run(["git", "init", "-b", "main"], root, 30, env=env)
+        if init["returncode"] != 0 or init["timed_out"]:
+            result.update(returncode=init["returncode"], timed_out=init["timed_out"],
+                          credentials_error=_credentials_error(init))
+            return result
+        (root / "probe.txt").write_text(
+            f"label={label}\ntimestamp_utc={datetime.now(timezone.utc).isoformat()}\n",
+            encoding="utf-8", newline="\n")
+        commands = [
+            ["git", "add", "probe.txt"],
+            ["git", "-c", "user.name=RelayForge POC", "-c",
+             "user.email=poc@relayforge.invalid", "commit", "-m", "POC-10 push check"],
+        ]
+        for command in commands:
+            step = _run(command, root, 30, env=env)
+            if step["returncode"] != 0 or step["timed_out"]:
+                result.update(returncode=step["returncode"], timed_out=step["timed_out"],
+                              credentials_error=_credentials_error(step))
+                return result
+        pushed = _run(["git", "push", remote, f"HEAD:refs/heads/{branch}"], root, 60, env=env)
+        result.update(returncode=pushed["returncode"], timed_out=pushed["timed_out"],
+                      credentials_error=_credentials_error(pushed))
+        if pushed["returncode"] == 0 and not pushed["timed_out"]:
+            deleted = _run(["git", "push", remote, "--delete", branch], root, 60, env=env)
+            result["delete_returncode"] = deleted["returncode"]
+            result["branch_deleted"] = deleted["returncode"] == 0 and not deleted["timed_out"]
+        return result
+    finally:
+        _rmtree(root)
 
 
 def write_evidence(out_dir: Path, label: str, payload: str,
@@ -216,7 +284,8 @@ def write_evidence(out_dir: Path, label: str, payload: str,
     raise OSError(f"No se pudo crear un archivo de evidencia único para {stem}")
 
 
-def run_probe(out_dir: Path, deep: bool, git_remote: str | None) -> dict:
+def run_probe(out_dir: Path, deep: bool, git_remote: str | None,
+              git_push_remote: str | None = None, label: str = "manual") -> dict:
     found = {name: locate(name) for name in ("claude", "codex", "agy")}
     binary_paths = {name: str(value.path) if value.path else None for name, value in found.items()}
     result: dict = {"context": _context(binary_paths), "agents": {}}
@@ -252,11 +321,10 @@ def run_probe(out_dir: Path, deep: bool, git_remote: str | None) -> dict:
         env["GIT_TERMINAL_PROMPT"] = "0"
         env["GCM_INTERACTIVE"] = "never"
         remote = _run(["git", "ls-remote", "--heads", git_remote], out_dir, 60, env=env)
-        remote["credentials_error"] = bool(remote["returncode"] and any(
-            marker in remote["output"].casefold() for marker in
-            ("authentication failed", "could not read username", "terminal prompts disabled",
-             "permission denied", "access denied", "credentials")))
+        remote["credentials_error"] = _credentials_error(remote)
         result["git_remote"] = {key: remote[key] for key in ("returncode", "timed_out", "credentials_error")}
+    if git_push_remote:
+        result["git_push"] = _git_push_check(out_dir, label, git_push_remote)
     return result
 
 
@@ -265,17 +333,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out-dir", type=Path)
     parser.add_argument("--deep", action="store_true")
     parser.add_argument("--git-remote-check")
+    parser.add_argument("--git-push-check")
     parser.add_argument("--label", type=_label, default="manual")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
     out_dir = args.out_dir or Path(os.environ.get("LOCALAPPDATA", Path.home())) / "RelayForge-POC" / "poc10"
     if args.dry_run:
         binaries = {name: name for name in ("claude", "codex", "agy")}
-        print(redact(json.dumps(_commands(binaries, out_dir, args.deep, args.git_remote_check, args.label),
+        print(redact(json.dumps(_commands(binaries, out_dir, args.deep, args.git_remote_check,
+                                          args.git_push_check, args.label),
                                 ensure_ascii=False, indent=2)))
         return 0
     out_dir.mkdir(parents=True, exist_ok=True)
-    result = run_probe(out_dir, args.deep, args.git_remote_check)
+    result = run_probe(out_dir, args.deep, args.git_remote_check, args.git_push_check, args.label)
     started_at = datetime.now().astimezone()
     result["label"] = args.label
     result["pid"] = os.getpid()

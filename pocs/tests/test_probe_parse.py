@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,9 @@ from poc10_autostart.probe import (
     codex_auth_result,
     codex_result,
     main,
+    _credentials_error,
+    _git_push_check,
+    _push_branch,
     write_evidence,
 )
 
@@ -65,7 +69,7 @@ def test_write_evidence_never_overwrites_same_mode_and_process(tmp_path: Path) -
 def test_probe_evidence_includes_run_metadata(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "poc10_autostart.probe.run_probe",
-        lambda out_dir, deep, git_remote: {"agents": {"claude": {"auth": "AVAILABLE"}}},
+        lambda *args, **kwargs: {"agents": {"claude": {"auth": "AVAILABLE"}}},
     )
 
     assert main(["--out-dir", str(tmp_path), "--label", "Logon"]) == 0
@@ -84,3 +88,26 @@ def test_probe_rejects_invalid_label(capsys: pytest.CaptureFixture[str]) -> None
 
     assert error.value.code == 2
     assert "label debe tener" in capsys.readouterr().err
+
+
+def test_push_branch_and_credentials_heuristic() -> None:
+    assert _push_branch("Logon", datetime(2026, 10, 3, tzinfo=timezone.utc), 42) == \
+        "poc10/Logon-20261003000000-42"
+    assert _credentials_error({"returncode": 128, "output": "Authentication failed"})
+    assert not _credentials_error({"returncode": 0, "output": ""})
+
+
+def test_git_push_check_creates_and_deletes_branch_in_local_bare_repo(tmp_path: Path) -> None:
+    bare = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "--bare", str(bare)], check=True, capture_output=True)
+    out_dir = tmp_path / "evidence"
+    out_dir.mkdir()
+
+    result = _git_push_check(out_dir, "Logon", bare.as_uri())
+
+    assert result == {"returncode": 0, "timed_out": False, "credentials_error": False,
+                      "branch_deleted": True, "delete_returncode": 0}
+    refs = subprocess.run(["git", "--git-dir", str(bare), "for-each-ref", "--format=%(refname)"],
+                          check=True, capture_output=True, text=True).stdout
+    assert refs.strip() == ""
+    assert not list(out_dir.iterdir())

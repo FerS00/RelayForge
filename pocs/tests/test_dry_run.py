@@ -87,3 +87,13 @@ def test_phase_0c_probe_dry_run() -> None:
     assert ten["label"] == "Logon"
     assert '"git", "ls-remote", "--heads"' in rendered
     assert "--verbose" in rendered and "--print-timeout" in rendered
+
+
+def test_phase_0c_git_push_dry_run_has_no_force() -> None:
+    ten = run_script("poc10_autostart/probe.py", "--dry-run", "--label", "Logon",
+                     "--git-push-check", "https://example.invalid/repo.git")
+    rendered = json.dumps(ten, ensure_ascii=False)
+    assert "git_push" in ten
+    assert '"git", "push"' in rendered
+    assert "--delete" in rendered
+    assert "--force" not in rendered

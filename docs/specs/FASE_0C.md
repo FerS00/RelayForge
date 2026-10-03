@@ -74,3 +74,22 @@ FastAPI en `127.0.0.1:8792` (`python app.py [--port 8792] [--log F]`). `create_a
 3. `probe.py --dry-run` sale con código 0.
 4. El README contiene la guía para el usuario de POC-10 (los tres modos, con reinicio entre pruebas) y de POC-11.
 5. Los `.ps1` pasan una comprobación de sintaxis: `powershell -NoProfile -Command "[System.Management.Automation.Language.Parser]::ParseFile('<archivo>',[ref]$null,[ref]$e) | Out-Null; $e.Count"` → 0 (la ejecuta el coordinador si el sandbox lo impide).
+
+---
+
+## ADENDA 1 (2026-10-03) — Prueba de escritura Git para cerrar R-1
+
+Motivo: `git ls-remote` solo prueba lectura (R-1, D-11). El usuario autorizó crear el repositorio privado vacío `FerS00/relayforge-push-test` como destino de pruebas.
+
+Archivos permitidos: `pocs/poc10_autostart/probe.py`, `pocs/poc10_autostart/register-task.ps1`, `pocs/tests/test_probe_parse.py`, `pocs/tests/test_dry_run.py` y `pocs/README.md` (sección POC-10).
+
+1. `probe.py --git-push-check URL` (opcional; se puede combinar con `--git-remote-check`):
+   - Crea un repositorio temporal dentro de `<out-dir>/push-<label>-<pid>/` con `git init -b main`, un archivo `probe.txt` (contenido: label y marca de tiempo UTC) y un commit con `-c user.name="RelayForge POC" -c user.email=poc@relayforge.invalid`.
+   - Hace `git push URL HEAD:refs/heads/poc10/<label>-<YYYYmmddHHMMSS>-<pid>` con `GIT_TERMINAL_PROMPT=0` y `GCM_INTERACTIVE=never`, timeout de 60 s.
+   - Si el push funcionó, borra la rama remota con `git push URL --delete <rama>` (timeout de 60 s).
+   - Borra el repositorio temporal con un `_rmtree` robusto (objetos Git de solo lectura en Windows).
+   - Registra en el JSON `git_push = {returncode, timed_out, credentials_error, branch_deleted, delete_returncode}`, sin la salida completa ni la URL con credenciales. `credentials_error` sigue la misma heurística que `git_remote`.
+   - Nunca usa `--force`. Nunca escribe en otra referencia que no sea `poc10/*`.
+2. `register-task.ps1 -GitPushRemote <url>` añade `--git-push-check "<url>"` con la misma validación que `-GitRemote` (sin comillas ni saltos de línea).
+3. `--dry-run` lista los comandos de push y borrado.
+4. Pruebas sin red ni GitHub: `test_probe_parse` cubre la construcción del nombre de rama y la heurística, y una prueba hace push real contra un repositorio **bare local** temporal (`git init --bare` en `tmp_path`, URL `file://`), verificando que la rama se crea y luego se borra. `test_dry_run` comprueba que no aparece `--force`.
