@@ -21,3 +21,4 @@ pytest-cache-files-*/
 *.pytest-tmp/
 .pytest-tmp/
 pocs/unused.ndjson
+pocs/poc11_tailscale.ndjson
