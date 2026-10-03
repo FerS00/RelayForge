@@ -1,7 +1,7 @@
 # Guía paso a paso — Fase 0C en la laptop (POC-10 y POC-11)
 
-- Laptop: `desktop-skkjche` (Tailscale `100.119.196.120`) · URL tailnet: `https://desktop-skkjche.taile73a43.ts.net/`
-- PC principal: `fernando` (`100.97.137.45`) · Celular: `100.95.173.95`
+- Laptop: `<laptop>` (IP de Tailscale `100.x.y.z`) · URL tailnet: `https://<laptop>.<tailnet>.ts.net/`
+- PC principal: `<pc>` · Celular: `<celular>` (consulta los nombres e IPs con `tailscale status`)
 - Tiempo estimado: unos 45 minutos (3 reinicios).
 - Ninguna prueba sube nada a Internet. La evidencia queda en la laptop y no contiene datos personales (se redacta).
 
@@ -155,13 +155,13 @@ tailscale serve --bg 8792
 tailscale serve status
 ```
 
-Si Tailscale pide habilitar los certificados HTTPS de la tailnet, mostrará un enlace a la consola de administración: ábrelo y actívalo (solo hace falta una vez). Debe quedar `https://desktop-skkjche.taile73a43.ts.net` apuntando a `127.0.0.1:8792`.
+Si Tailscale pide habilitar los certificados HTTPS de la tailnet, mostrará un enlace a la consola de administración: ábrelo y actívalo (solo hace falta una vez). Debe quedar `https://<laptop>.<tailnet>.ts.net` apuntando a `127.0.0.1:8792`.
 
 **Nunca uses `tailscale funnel`**: eso lo expondría a Internet.
 
 ### 4. Probar desde el celular
 
-1. Con Tailscale activo en el celular, abre `https://desktop-skkjche.taile73a43.ts.net/`.
+1. Con Tailscale activo en el celular, abre `https://<laptop>.<tailnet>.ts.net/`.
 2. Anota qué muestra en `Tailscale-User-Login` (debería ser tu cuenta de Tailscale).
 3. Deja la página abierta **10 minutos** con la pantalla encendida: el contador debe avanzar uno por segundo (cerca de 600).
 4. Bloquea el celular 1 minuto y vuelve: debe reconectarse solo y seguir contando sin volver a 0 (el contador de reconexiones sube).
@@ -171,7 +171,7 @@ Avísame cuando el paso 3 esté activo: también puedo abrir la URL desde la PC 
 ### 5. Comprobación desde la propia laptop (ventana 2)
 
 ```powershell
-uv run python poc11_tailscale/local_check.py --ts-url https://desktop-skkjche.taile73a43.ts.net
+uv run python poc11_tailscale/local_check.py --ts-url https://<laptop>.<tailnet>.ts.net
 ```
 
 ### 6. Apagar todo
@@ -193,8 +193,8 @@ Cualquiera de estas dos opciones:
 - **Taildrop** (envío directo por Tailscale a la PC principal), desde `C:\Dev\RelayForge\pocs`:
 
 ```powershell
-Get-ChildItem $env:LOCALAPPDATA\RelayForge-POC\poc10\*.json | ForEach-Object { tailscale file cp $_.FullName fernando: }
-tailscale file cp .\poc11_tailscale.ndjson fernando:
+Get-ChildItem $env:LOCALAPPDATA\RelayForge-POC\poc10\*.json | ForEach-Object { tailscale file cp $_.FullName <pc>: }
+tailscale file cp .\poc11_tailscale.ndjson <pc>:
 ```
 
 En ese caso dime «enviado» y los recojo en la PC.
