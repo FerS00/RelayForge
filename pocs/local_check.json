@@ -1,0 +1,6 @@
+{
+  "identity_absent_direct": true,
+  "spoof_accepted_direct": true,
+  "direct_status": 200,
+  "spoof_status": 200
+}

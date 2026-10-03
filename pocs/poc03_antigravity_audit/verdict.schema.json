@@ -1,0 +1,9 @@
+{
+  "type": "object",
+  "required": ["status", "findings"],
+  "properties": {
+    "status": {"enum": ["APROBADO", "APROBADO CON OBSERVACIONES", "RECHAZADO"]},
+    "findings": {"type": "array", "items": {"type": "object"}}
+  },
+  "additionalProperties": true
+}
