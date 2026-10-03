@@ -30,33 +30,29 @@ Los runners reales requieren el binario correspondiente en `PATH` o `RELAYFORGE_
 
 ### POC-10: arranque automático en Windows
 
-Abre PowerShell como el usuario que tiene autenticadas las CLIs. Desde `pocs/`, ejecuta una prueba por vez; reinicia la laptop para cada modo y entre los modos:
+Abre PowerShell como el usuario que tiene autenticadas las CLIs. Registra cada modo con su etiqueta para atribuir la evidencia incluso si las tareas corren a la vez:
 
 ```powershell
-./poc10_autostart/register-task.ps1 -Mode Logon
+./poc10_autostart/register-task.ps1 -Mode Logon -Deep
+./poc10_autostart/register-task.ps1 -Mode StartupS4U -Deep
+./poc10_autostart/register-task.ps1 -Mode StartupPassword -Deep
 ```
 
-Reinicia la laptop, inicia sesión y revisa el JSON más reciente en `$env:LOCALAPPDATA\RelayForge-POC\poc10`. Después elimina esa tarea y prueba el siguiente modo:
+Después de reiniciar, cada JSON lleva fecha, modo y PID; no elijas solo el archivo más reciente. StartupS4U y StartupPassword se ejecutan al iniciar Windows; Logon se ejecuta al iniciar sesión. StartupS4U no obtiene los secretos DPAPI de una sesión iniciada.
 
 ```powershell
-./poc10_autostart/unregister-task.ps1 -Mode Logon
-./poc10_autostart/register-task.ps1 -Mode StartupS4U
+Get-ChildItem "$env:LOCALAPPDATA\RelayForge-POC\poc10" -Filter *.json | Sort-Object LastWriteTime
 ```
 
-Reinicia la laptop; StartupS4U no obtiene los secretos DPAPI de una sesión iniciada. Elimina la tarea y prueba StartupPassword, que solicita la contraseña con `Get-Credential` y no la guarda:
+StartupPassword solicita la contraseña mediante `Get-Credential`; el script no la imprime. `register-task.ps1` comprueba que el intérprete exista antes de resolver su ruta.
 
-```powershell
-./poc10_autostart/unregister-task.ps1 -Mode StartupS4U
-./poc10_autostart/register-task.ps1 -Mode StartupPassword
-```
-
-Reinicia de nuevo, revisa la evidencia y elimina la tarea:
+Al terminar, elimina las tareas:
 
 ```powershell
 ./poc10_autostart/unregister-task.ps1 -Mode StartupPassword
 ```
 
-Añade `-Deep` para turnos mínimos de las tres CLIs y `-GitRemote <URL>` para consultar ramas con `git ls-remote --heads` (solo lectura). `probe.py --dry-run` solo imprime argv y no ejecuta las CLIs.
+`-GitRemote <URL>` consulta ramas con `git ls-remote --heads` (solo lectura). Si el remoto es público, un resultado correcto no demuestra que Git Credential Manager tenga credenciales. Esta POC no hace `push`. `probe.py --dry-run --label Logon` solo imprime los comandos y la etiqueta; no ejecuta CLIs ni escribe evidencia.
 
 ### POC-11: Tailscale Serve, identidad y SSE
 
@@ -81,6 +77,8 @@ tailscale serve reset
 ```
 
 **Nunca ejecutes `tailscale funnel`.** La aplicación escucha solo en `127.0.0.1`; la comprobación desde la laptop a la URL tailnet es opcional con `local_check.py --ts-url https://<laptop>.<tailnet>.ts.net`.
+
+La app se ejecuta en primer plano y no se inicia automáticamente al reiniciar. Serve puede conservar la ruta al puerto local; si la app no está escuchando, el sitio devuelve HTTP 502. Vuelve a iniciar `app.py` después del reinicio.
 
 ## Pruebas locales
 

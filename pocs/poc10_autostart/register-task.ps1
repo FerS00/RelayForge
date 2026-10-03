@@ -8,14 +8,15 @@
 
 $ErrorActionPreference = 'Stop'
 $taskName = "RelayForge-POC10-$Mode"
-$python = (Resolve-Path (Join-Path $PSScriptRoot '..\.venv\Scripts\python.exe')).Path
+$pythonPath = Join-Path $PSScriptRoot '..\.venv\Scripts\python.exe'
 $probe = Join-Path $PSScriptRoot 'probe.py'
 $workingDirectory = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 
-if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
-    Write-Error "No se encontró el intérprete del entorno pocs: $python"
+if (-not (Test-Path -LiteralPath $pythonPath -PathType Leaf)) {
+    Write-Error "No se encontró el intérprete del entorno pocs: $pythonPath"
     exit 2
 }
+$python = (Resolve-Path -LiteralPath $pythonPath).Path
 if ($GitRemote -and ($GitRemote.Contains('"') -or $GitRemote.Contains("`r") -or $GitRemote.Contains("
 "))) {
     Write-Error 'GitRemote no puede contener comillas ni saltos de línea.'
@@ -30,7 +31,7 @@ if ($Mode -eq 'StartupS4U') {
     }
 }
 
-$arguments = @('-X', 'utf8', "`"$probe`"")
+$arguments = @('-X', 'utf8', "`"$probe`"", '--label', $Mode)
 if ($Deep) { $arguments += '--deep' }
 if ($GitRemote) { $arguments += @('--git-remote-check', "`"$GitRemote`"") }
 $action = New-ScheduledTaskAction -Execute $python -Argument ($arguments -join ' ') -WorkingDirectory $workingDirectory

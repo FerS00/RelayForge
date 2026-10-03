@@ -5,6 +5,14 @@
 - Tiempo estimado: unos 45 minutos (3 reinicios).
 - Ninguna prueba sube nada a Internet. La evidencia queda en la laptop y no contiene datos personales (se redacta).
 
+### Estado comprobado el 2026-10-03
+
+- Tras el reinicio, los tres modos de POC-10 ejecutaron las sondas profundas: Claude, Codex y agy quedaron `AVAILABLE`; los tres turnos de prueba terminaron con código 0. Se verificaron por separado `Logon` (sesión 1), `StartupS4U` (sesión 0) y `StartupPassword` (sesión 0).
+- La ejecución automática simultánea generó solo dos JSON para tres tareas porque el nombre anterior usaba precisión de un segundo. El script ahora añade etiqueta y PID y crea archivos en modo exclusivo; vuelve a registrar las tareas para que incorporen la etiqueta antes de otra prueba automática.
+- `git ls-remote --heads` al remoto público respondió correctamente, pero eso no prueba credenciales GCM: el repositorio admite consultas anónimas. No se hizo `push`; no hay remoto de pruebas configurado en esta laptop.
+- En el celular se confirmó `/whoami` y el SSE se mantuvo 600 segundos (observación del usuario). El ataque local de cabeceras fue aceptado, como espera esta POC; las cabeceras Tailscale no deben usarse como único control de acceso.
+- Tras el reinicio, `tailscale serve status` conserva la ruta al puerto 8792, pero la app no estaba escuchando y `/whoami` devolvió HTTP 502. `app.py` debe iniciarse manualmente; no tiene arranque automático.
+
 ---
 
 ## Paso 0 — Preparación (una sola vez)
@@ -27,7 +35,7 @@ Ahora la **línea base** (sesión iniciada, interactiva):
 uv run python poc10_autostart/probe.py --deep
 ```
 
-Resultado esperado: una línea `POC-10: claude=AVAILABLE, codex=AVAILABLE, agy=AVAILABLE; evidencia=<fecha>.json`. Si alguno no sale `AVAILABLE`, detente y avísame: hay que arreglar la autenticación antes de seguir.
+Resultado esperado: una línea `POC-10: claude=AVAILABLE, codex=AVAILABLE, agy=AVAILABLE; evidencia=<fecha>-manual-<pid>.json`. Si alguno no sale `AVAILABLE`, detente y avísame: hay que arreglar la autenticación antes de seguir.
 
 > Si PowerShell bloquea los scripts `.ps1` (error de "execution policy"), usa la forma `powershell -ExecutionPolicy Bypass -File …` que se indica en cada paso. Solo afecta a esa ejecución; no cambia la política del sistema.
 

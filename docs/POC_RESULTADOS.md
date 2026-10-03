@@ -150,15 +150,17 @@ Observaciones del entorno del usuario (no son defectos de RelayForge): `codex do
 
 ## POC-10 — Arranque automático (parte ejecutada)
 
-- Línea base interactiva en la PC (`probe.py --deep`, sesión 1): Claude, Codex y agy `AVAILABLE`, con las sondas profundas correctas; la evidencia no contiene datos personales.
-- **Pendiente en la laptop:** registrar la tarea en los modos `Logon`, `StartupS4U` y `StartupPassword` (`register-task.ps1`), reiniciar y comparar con la línea base. Lo ejecuta el usuario (requiere reiniciar la laptop y, en un modo, introducir su contraseña).
+- Tras el reinicio del 2026-10-03, las tres tareas (`Logon`/Interactive, `StartupS4U`/S4U y `StartupPassword`/Password) informaron `LastTaskResult=0`. Las sondas separadas confirmaron Claude, Codex y agy `AVAILABLE`; las sondas profundas de cada CLI terminaron con código 0 y resultado no vacío.
+- Evidencia atribuible por modo: `20261003-023821.json` (StartupS4U, sesión 0), `20261003-023859.json` (StartupPassword, sesión 0) y `20261003-024116.json` (Logon, sesión 1). Estos son reintentos individuales después del reinicio. En el arranque simultáneo solo quedaron dos JSON para tres tareas porque el nombre tenía precisión de un segundo y podía sobrescribir; esos dos archivos no se atribuyen con certeza a un modo.
+- Git: `git ls-remote --heads` contra el remoto público de RelayForge terminó con código 0, pero la consulta es anónima y no demuestra que GCM tenga credenciales en las tareas. **El `push` del criterio 38.2 no se ejecutó**: no existe un remoto privado de pruebas configurado y la especificación Fase 0C define la comprobación de Git como solo lectura. POC-10 queda parcial respecto al criterio de Git/push.
+- Corrección aplicada al runner: los próximos JSON incorporan modo, PID y marcas de tiempo, se crean en modo exclusivo y no sobrescriben evidencia previa. Las tareas actuales no llevan `--label`; deben volver a registrarse para probar el cambio.
 
 ## POC-11 — Tailscale serve (parte ejecutada)
 
-- `app.py` escucha solo en `127.0.0.1:8792` (verificado con `Get-NetTCPConnection`).
-- **Hallazgo de seguridad confirmado:** cualquier proceso local puede enviar `Tailscale-User-Login: attacker@example.com` a `127.0.0.1` y la app lo acepta (`spoof_accepted_direct=true`). Como los agentes se ejecutan en la misma máquina, **la identidad por cabeceras de Tailscale no es suficiente**: la sesión emparejada con cookie (`HttpOnly`, `SameSite=Strict`) y el CSRF son obligatorios, y las cabeceras quedan como capa adicional.
-- La tailnet incluye un nodo de otro usuario (compartido), así que la allowlist de identidad es necesaria (T9).
-- **Pendiente:** `tailscale serve --bg 8792` en la laptop, `/whoami` y un SSE de 10 min desde el móvil, y después `tailscale serve reset`. Requiere autorización del usuario (cambia la configuración de Tailscale del nodo).
+- El usuario verificó `/whoami` desde el celular y observó el SSE durante 600 segundos. Esto completa la prueba móvil solicitada; el log local disponible no conserva un registro de esos 600 segundos.
+- `tailscale serve status` confirma la ruta tailnet-only hacia `127.0.0.1:8792`. Después del reinicio, la app no estaba escuchando y `/whoami` devolvió HTTP 502. La configuración de Serve persiste, pero `app.py` no se inicia automáticamente y debe arrancarse manualmente.
+- La comprobación local registra `identity_absent_direct=true` y `spoof_accepted_direct=true`: cualquier proceso local puede falsificar las cabeceras. La identidad de Tailscale debe complementarse con cookie de emparejamiento y CSRF; nunca usar las cabeceras como único control. No se observó uso de Funnel.
+- Veredicto: `/whoami` y SSE móvil comprobados por observación del usuario; no se probó falsificación desde otro dispositivo. La falsificación local está confirmada, por lo que el emparejamiento y CSRF siguen siendo obligatorios. La disponibilidad tras reinicio depende del arranque manual de la app.
 
 ## Decisiones y cambios para el plan
 

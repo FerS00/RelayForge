@@ -78,11 +78,12 @@ def test_approval_denial_detector_uses_denial_events_or_tool_results() -> None:
 
 
 def test_phase_0c_probe_dry_run() -> None:
-    ten = run_script("poc10_autostart/probe.py", "--dry-run", "--deep",
+    ten = run_script("poc10_autostart/probe.py", "--dry-run", "--deep", "--label", "Logon",
                      "--git-remote-check", "https://example.invalid/repo.git")
     rendered = json.dumps(ten, ensure_ascii=False)
     for command in ten.values():
         assert command
     assert '"claude"' in rendered and '"codex"' in rendered and '"agy"' in rendered
+    assert ten["label"] == "Logon"
     assert '"git", "ls-remote", "--heads"' in rendered
     assert "--verbose" in rendered and "--print-timeout" in rendered

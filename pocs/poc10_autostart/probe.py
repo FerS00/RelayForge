@@ -7,10 +7,11 @@ import ctypes
 import getpass
 import json
 import os
+import re
 import subprocess
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Mapping
@@ -171,8 +172,8 @@ def _deep_command(agent: str, binary: str, cwd: Path) -> tuple[list[str], str | 
 
 
 def _commands(binary_names: dict[str, str], out_dir: Path, deep: bool,
-              git_remote: str | None) -> dict:
-    commands: dict[str, object] = {}
+              git_remote: str | None, label: str) -> dict:
+    commands: dict[str, object] = {"label": label}
     for agent, binary in binary_names.items():
         if agent == "claude":
             commands[agent] = {"version": [binary, "--version"], "auth": [binary, "auth", "status"],
@@ -189,6 +190,30 @@ def _commands(binary_names: dict[str, str], out_dir: Path, deep: bool,
     if git_remote:
         commands["git_remote"] = ["git", "ls-remote", "--heads", git_remote]
     return commands
+
+
+def _label(value: str) -> str:
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,32}", value):
+        raise argparse.ArgumentTypeError("label debe tener 1-32 caracteres: letras, números, _ o -")
+    return value
+
+
+def write_evidence(out_dir: Path, label: str, payload: str,
+                   now: datetime | None = None, pid: int | None = None) -> Path:
+    timestamp = (now or datetime.now()).strftime("%Y%m%d-%H%M%S")
+    process_id = os.getpid() if pid is None else pid
+    stem = f"{timestamp}-{label}-{process_id}"
+    for attempt in range(1, 21):
+        suffix = "" if attempt == 1 else f"-{attempt}"
+        output_path = out_dir / f"{stem}{suffix}.json"
+        try:
+            with output_path.open("x", encoding="utf-8", newline="\n") as evidence_file:
+                evidence_file.write(payload)
+                evidence_file.write("\n")
+            return output_path
+        except FileExistsError:
+            continue
+    raise OSError(f"No se pudo crear un archivo de evidencia único para {stem}")
 
 
 def run_probe(out_dir: Path, deep: bool, git_remote: str | None) -> dict:
@@ -240,19 +265,24 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out-dir", type=Path)
     parser.add_argument("--deep", action="store_true")
     parser.add_argument("--git-remote-check")
+    parser.add_argument("--label", type=_label, default="manual")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
     out_dir = args.out_dir or Path(os.environ.get("LOCALAPPDATA", Path.home())) / "RelayForge-POC" / "poc10"
     if args.dry_run:
         binaries = {name: name for name in ("claude", "codex", "agy")}
-        print(redact(json.dumps(_commands(binaries, out_dir, args.deep, args.git_remote_check),
+        print(redact(json.dumps(_commands(binaries, out_dir, args.deep, args.git_remote_check, args.label),
                                 ensure_ascii=False, indent=2)))
         return 0
     out_dir.mkdir(parents=True, exist_ok=True)
     result = run_probe(out_dir, args.deep, args.git_remote_check)
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    output_path = out_dir / f"{timestamp}.json"
-    output_path.write_text(redact(json.dumps(result, ensure_ascii=False, indent=2)) + "\n", encoding="utf-8")
+    started_at = datetime.now().astimezone()
+    result["label"] = args.label
+    result["pid"] = os.getpid()
+    result["started_at"] = started_at.isoformat()
+    result["boot_time"] = datetime.fromtimestamp(psutil.boot_time(), tz=timezone.utc).isoformat()
+    payload = redact(json.dumps(result, ensure_ascii=False, indent=2))
+    output_path = write_evidence(out_dir, args.label, payload, started_at.replace(tzinfo=None))
     statuses = ", ".join(f"{name}={data['auth']}" for name, data in result["agents"].items())
     print(f"POC-10: {statuses}; evidencia={output_path.name}")
     return 0

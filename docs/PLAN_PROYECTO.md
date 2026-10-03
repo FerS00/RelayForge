@@ -993,7 +993,7 @@ Comando sugerido para cada fase: `$plan-driven-development Ejecuta únicamente l
 
 ### Fase 0 — POCs de validación técnica
 
-- Estado: En curso. 0A y 0B completadas (2026-10-02). 0C: scripts listos y partes locales ejecutadas; **pendiente en la laptop** (POC-10, tareas programadas) y `tailscale serve` desde el móvil (POC-11), que requieren acción o autorización del usuario · Esfuerzo: M
+- Estado: En curso. 0A y 0B completadas (2026-10-02). 0C verificada parcialmente en laptop (2026-10-03): los tres modos de POC-10 autenticaron las CLIs; falta el `push` del criterio 38.2 y revalidar las etiquetas de evidencia tras registrar de nuevo las tareas. POC-11 confirmó `/whoami` y SSE móvil durante 600 s (observación del usuario); no se probó falsificación externa y, tras el reinicio, la app no se inició y Serve devolvió HTTP 502 · Esfuerzo: M
 - Objetivo: validar los supuestos NEEDS POC antes de fijar los contratos de los adapters (sección 38).
 - Dependencias: D-01 (ubicación del repositorio) resuelta; aprobación del plan.
 - Tareas: POC-01 a POC-11 como scripts independientes en `pocs/`; registrar comandos, versiones, salidas anonimizadas y veredicto en `docs/POC_RESULTADOS.md`. Las POCs con agentes reales se ejecutan en la PC; POC-10 y POC-11 en la laptop.
@@ -1195,8 +1195,8 @@ Comando sugerido para cada fase: `$plan-driven-development Ejecuta únicamente l
 | `--mode plan` es suficiente para solo lectura | UNSAFE ASSUMPTION | — |
 | Matar el árbol de procesos en Windows sin huérfanos (Job Objects) | **CONFIRMED** (sintético 10/10; Claude con 67 descendientes, Codex y agy reales) | POC-06 |
 | Procesos de agente sobreviven al backend con stdout a archivo y breakaway del Job | **CONFIRMED** (`JobObject` sin `KILL_ON_JOB_CLOSE` + stdout a archivo; lectura reanudada por offset sin pérdidas) | POC-07 |
-| Las tres CLIs funcionan desde una tarea programada al iniciar el equipo (credenciales, perfil, Credential Manager) | NEEDS POC: scripts listos (`pocs/poc10_autostart`); ejecución en la laptop pendiente del usuario | POC-10 |
-| `tailscale serve` en Windows añade las cabeceras `Tailscale-User-Login` y soporta SSE | NEEDS POC (pendiente de autorización para activar serve). **CONFIRMED**: cualquier proceso local puede falsificar esas cabeceras contra `127.0.0.1` → no bastan como autenticación | POC-11 |
+| Las tres CLIs funcionan desde una tarea programada al iniciar el equipo (credenciales, perfil, Credential Manager) | **PARCIAL**: Claude, Codex y agy `AVAILABLE` con turno mínimo en Logon (sesión 1), StartupS4U (sesión 0) y StartupPassword (sesión 0); Git Credential Manager no queda validado por `ls-remote` anónimo y falta el `push` de 38.2 | POC-10 |
+| `tailscale serve` en Windows añade las cabeceras `Tailscale-User-Login` y soporta SSE | **PARCIAL**: `/whoami` y SSE móvil 600 s observados por el usuario; falsificación externa no probada; proceso local puede falsificar cabeceras contra `127.0.0.1`; tras reinicio `app.py` no levantó y Serve dio HTTP 502 | POC-11 |
 | Formatos estables entre versiones | UNSAFE ASSUMPTION | fixtures por versión |
 | Hooks de Codex como punto de política por comando | NEEDS POC | LATER |
 
@@ -1215,6 +1215,8 @@ Comando sugerido para cada fase: `$plan-driven-development Ejecuta únicamente l
 | **POC-09** Salud y errores de agentes | Detectar AUTH_REQUIRED, RATE_LIMITED, NOT_INSTALLED | `auth status`/`login status`/`doctor` de cada CLI con salida capturada; simular «no instalado» (PATH vacío); revisar los mensajes de error conocidos de rate limit (logs históricos del usuario si existen, sin secretos) | Tabla de señales por CLI | PASS: al menos instalado, versión y autenticación son fiables en las 3 CLIs. FAIL: autenticación de `agy` indetectable → `UNKNOWN` + `--deep` | Doctor; Fase 4 y 8 |
 | **POC-10** Servicio en la laptop | Arranque sin intervención | Registrar la tarea programada (al iniciar el sistema vs al iniciar sesión, «ejecutar tanto si el usuario inició sesión como si no»); reiniciar; ejecutar un turno mínimo de cada CLI y un `git push` a un repositorio de prueba | Las tres CLIs autenticadas y el push con Git Credential Manager | PASS: todo funciona sin iniciar sesión, o se documenta que requiere inicio de sesión automático. FAIL: las credenciales no están disponibles → exigir sesión iniciada | Fase 4 |
 | **POC-11** Tailscale serve | Identidad + SSE | `tailscale serve` hacia `127.0.0.1:8787`; endpoint que imprime las cabeceras; stream SSE de 10 min desde el móvil | Llega `Tailscale-User-Login`; el SSE se mantiene con pings | PASS: cabeceras presentes y no falsificables desde fuera; SSE estable. FAIL: sin cabeceras → solo pairing por token | Fase 4 |
+
+**Estado laptop 0C (2026-10-03):** POC-10 permanece parcial: las pruebas de CLI por modo pasan, pero no se ejecutó el `push` del criterio anterior y `ls-remote` al remoto público no valida credenciales GCM. La especificación `docs/specs/FASE_0C.md` define el chequeo Git como solo lectura; esta discrepancia de alcance no se modifica en este cierre. POC-11 verificó `/whoami` y SSE móvil según observación del usuario; no verificó un intento de falsificación desde un dispositivo externo, confirmó que una cabecera se puede falsificar localmente y requiere inicio manual de `app.py` tras reiniciar. Ver `docs/POC_RESULTADOS.md`.
 
 ## 39. MVP exacto
 
@@ -1305,3 +1307,4 @@ El usuario aceptó trabajar con las recomendaciones el 2026-10-02. Estado actual
 | 2026-10-02 | Plan aprobado; Fase 0 aprobada; carpeta local conectada a `origin` (`FerS00/RelayForge`, rama `main`) | Aprobación explícita del usuario | Aprobado |
 | 2026-10-02 | Fase 0A ejecutada: POC-01, 02, 03, 05 y 06 PASS; adendas 1 y 2 (contrato de agy; auditor sin comandos, checks antes de la auditoría); matriz 38.1 actualizada. Detalle en `docs/POC_RESULTADOS.md` | Evidencia de las POCs | Decisión técnica del arquitecto dentro de la Fase 0 aprobada |
 | 2026-10-02 | Fase 0B (POC-04, 07, 08, 09) completada; Fase 0C con scripts y partes locales; matriz 38.1 y T9 actualizados. Detalle en `docs/POC_RESULTADOS.md` | Evidencia de las POCs | Decisión técnica del arquitecto dentro de la Fase 0 aprobada |
+| 2026-10-03 | Resultados laptop de POC-10 y POC-11 registrados; runner POC-10 corregido para etiquetar y no sobrescribir JSON concurrentes. POC-10 sigue parcial por el `push` no ejecutado; POC-11 confirmó SSE móvil y registra HTTP 502 cuando la app no arranca tras reinicio | Verificación solicitada por el usuario y evidencia de la laptop | Dentro de Fase 0 aprobada; alcance Git push/solo lectura pendiente de reconciliación |
