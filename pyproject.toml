@@ -1,0 +1,66 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "relayforge"
+version = "0.1.0"
+description = "Local chat interface for Claude Code"
+readme = "README.md"
+requires-python = ">=3.13"
+license = "Apache-2.0"
+dependencies = [
+  "alembic>=1.16,<2",
+  "fastapi>=0.116,<1",
+  "pydantic-settings>=2.10,<3",
+  "pyyaml>=6,<7",
+  "sqlalchemy>=2.0,<3",
+  "uvicorn>=0.35,<1",
+]
+
+[project.scripts]
+relayforge = "relayforge.cli:main"
+
+[dependency-groups]
+dev = [
+  "httpx>=0.28,<1",
+  "mypy>=1.17,<2",
+  "psutil>=7,<8",
+  "pytest>=8.4,<9",
+  "ruff>=0.12,<1",
+  "types-PyYAML>=6,<7",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/relayforge"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/relayforge/db/migrations" = "relayforge/db/migrations"
+
+[tool.ruff]
+line-length = 110
+target-version = "py313"
+src = ["src", "tests"]
+extend-exclude = [
+  "pocs",
+  ".pytest-temp-validation",
+  "*pytest-tmp-run",
+  "pytest-cache-files-*",
+  ".uv-cache-validation",
+]
+include = ["src/**/*.py", "tests/**/*.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.13"
+mypy_path = "src"
+packages = ["relayforge"]
+strict = true
+ignore_missing_imports = true
+exclude = ["pocs"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
