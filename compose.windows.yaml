@@ -1,0 +1,48 @@
+services:
+  relayforge:
+    image: relayforge:windows
+    build:
+      context: .
+      dockerfile: Dockerfile.windows
+    isolation: hyperv
+    container_name: relayforge
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    environment:
+      RELAYFORGE_CONTAINER_MODE: "true"
+      RELAYFORGE_BIND: "0.0.0.0"
+      RELAYFORGE_PORT: "8792"
+      RELAYFORGE_TRUSTED_PROXY_IP: "172.30.240.1"
+      RELAYFORGE_HOME: "C:\\relayforge-home"
+      RELAYFORGE_WORKSPACE_DIR: "C:\\workspace"
+      RELAYFORGE_PROJECTS_ROOT: "C:\\projects"
+      USERPROFILE: "C:\\relayforge-claude"
+      HOME: "C:\\relayforge-claude"
+      LOCALAPPDATA: "C:\\relayforge-claude\\AppData\\Local"
+      CODEX_HOME: "C:\\relayforge-codex"
+    volumes:
+      - relayforge-home:C:/relayforge-home
+      - relayforge-workspace:C:/workspace
+      - relayforge-projects:C:/projects
+      - relayforge-claude:C:/relayforge-claude
+      - relayforge-codex:C:/relayforge-codex
+    networks:
+      relayforge-nat:
+        ipv4_address: 172.30.240.10
+
+networks:
+  relayforge-nat:
+    name: relayforge-nat
+    driver: nat
+    ipam:
+      config:
+        - subnet: 172.30.240.0/24
+          gateway: 172.30.240.1
+
+volumes:
+  relayforge-home:
+  relayforge-workspace:
+  relayforge-projects:
+  relayforge-claude:
+  relayforge-codex:

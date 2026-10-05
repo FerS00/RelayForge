@@ -1,3 +1,5 @@
+> Material histórico de POCs/validaciones previas. Contrasta procedimientos y resultados con el [plan vigente](PLAN_PROYECTO.md) y las guías actuales de instalación/Docker. No acredita aceptación del despliegue nuevo.
+
 # Guía paso a paso — Fase 0C en la laptop (POC-10 y POC-11)
 
 - Laptop: `<laptop>` (IP de Tailscale `100.x.y.z`) · URL tailnet: `https://<laptop>.<tailnet>.ts.net/`

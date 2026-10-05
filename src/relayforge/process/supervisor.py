@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import subprocess
 import threading
@@ -12,6 +13,7 @@ import psutil
 
 from relayforge.adapters.base import LaunchPlan
 from relayforge.platform.windows import close_job, create_kill_on_close_job
+from relayforge.security.redact import redact_log_file
 
 _MAX_LINE = 8 * 1024 * 1024
 _CMD_FORBIDDEN = frozenset('&|<>^%"\r\n')
@@ -35,6 +37,21 @@ class Supervisor:
     def __init__(self) -> None:
         self._runs: dict[tuple[int, float], RunHandle] = {}
         self._lock = threading.RLock()
+
+    async def start_async(self, plan: LaunchPlan, *, output_path: Path, stderr_path: Path) -> RunHandle:
+        task = asyncio.create_task(
+            asyncio.to_thread(self.start, plan, output_path=output_path, stderr_path=stderr_path)
+        )
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            try:
+                handle = await asyncio.shield(task)
+            except Exception:
+                handle = None
+            if handle is not None:
+                await asyncio.to_thread(self.kill, handle)
+            raise
 
     def start(self, plan: LaunchPlan, *, output_path: Path, stderr_path: Path) -> RunHandle:
         argv = list(plan.argv)
@@ -132,9 +149,29 @@ class Supervisor:
                 _, alive = psutil.wait_procs(alive, timeout=max(0, deadline - time.monotonic()))
             if alive:
                 raise TimeoutError("No terminaron todos los procesos descendientes en 5 segundos.")
+        redact_log_file(handle.output_path)
+        redact_log_file(handle.stderr_path)
 
     def kill_all(self) -> None:
         with self._lock:
             handles = list(self._runs.values())
         for handle in handles:
             self.kill(handle)
+
+    @staticmethod
+    def terminate_process_identity(pid: int, create_time: float) -> bool:
+        try:
+            process = psutil.Process(pid)
+            if abs(process.create_time() - create_time) > 0.01:
+                return False
+            descendants = process.children(recursive=True)
+            process.terminate()
+            _, alive = psutil.wait_procs([process, *descendants], timeout=3)
+            for item in alive:
+                with suppress(psutil.NoSuchProcess, psutil.AccessDenied):
+                    item.kill()
+            if alive:
+                psutil.wait_procs(alive, timeout=2)
+            return True
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            return False

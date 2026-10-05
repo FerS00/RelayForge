@@ -1,3 +1,5 @@
+> Material histórico de POCs/validaciones previas. Contrasta procedimientos y resultados con el [plan vigente](PLAN_PROYECTO.md) y las guías actuales de instalación/Docker. No acredita aceptación del despliegue nuevo.
+
 # Resultados de las POCs — Fase 0
 
 - Plan: `docs/PLAN_PROYECTO.md` (Fase 0). Especificación: `docs/specs/FASE_0A.md` (con las adendas 1 y 2).

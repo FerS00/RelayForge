@@ -3,8 +3,10 @@ from __future__ import annotations
 import asyncio
 from collections import defaultdict
 from collections.abc import AsyncGenerator
+from dataclasses import replace
 
 from relayforge.adapters.base import NormalizedEvent
+from relayforge.security.redact import redact_value
 
 
 class EventBus:
@@ -13,6 +15,7 @@ class EventBus:
         self._queue_size = queue_size
 
     def publish(self, conversation_id: str, event: NormalizedEvent) -> None:
+        event = replace(event, data=redact_value(event.data))
         for queue in tuple(self._queues[conversation_id]):
             try:
                 queue.put_nowait(event)

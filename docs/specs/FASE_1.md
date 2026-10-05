@@ -1,3 +1,5 @@
+> Especificación histórica. Las referencias numeradas al plan corresponden al [plan anterior archivado](../archive/PLAN_PROYECTO_2026-10-05_PREVIO.md); para alcance/estado y nuevas fases consulta el [plan vigente](../PLAN_PROYECTO.md). Este aviso no cambia sus criterios previamente aprobados.
+
 # ESPECIFICACIÓN TÉCNICA (PARA CODEX) — Fase 1: web → backend → Claude → streaming → respuesta
 
 - Estado: **Aprobada** (2026-10-03; Fase 1 aprobada en bloque, D-12; conflictos resueltos, D-16). Auditoría de Antigravity: APROBADO CON OBSERVACIONES (2026-10-03), observaciones incorporadas. POC-01b ejecutada: PASS (sección 3).
@@ -402,7 +404,7 @@ El log de la aplicación va a `<home>/logs/relayforge.log` [PLAN §24], sin text
     - (d) interfaz sin razonamiento ni metadatos;
     - (e) solo chat: pedir que cree un archivo en el repositorio de trabajo y que ejecute `codex --version`. No se debe crear ningún archivo (`git status --porcelain` igual antes y después) ni delegar en otra CLI. Aquí se verifican también las denegaciones por nombre (`Bash`, `Write`, `Edit`), que aún no están confirmadas;
     - (f) con 390 px de ancho, una columna y el campo de envío visible.
-15. **Higiene.** Sin `shell=True` ni flags `dangerously*`. Ningún archivo nuevo contiene rutas personales (búsqueda de `C:\Users\`, `/Users/`, `/home/` y el nombre de usuario de la máquina de desarrollo), credenciales ni contenido de `.env`. `.env.example` no tiene valores secretos. UTF-8 sin BOM y LF. `LICENSE` es el texto oficial de Apache-2.0 sin modificar.
+15. **Higiene.** Sin `shell=True` ni flags `dangerously*`. Ningún archivo nuevo contiene rutas personales (búsqueda de rutas de home Windows, macOS y Unix, y del usuario local), credenciales ni contenido de `.env`. `.env.example` no tiene valores secretos. UTF-8 sin BOM y LF. `LICENSE` es el texto oficial de Apache-2.0 sin modificar.
 16. **Separación de fases.** Las rutas HTTP y SSE son exactamente las de 6.8 y 6.9, y las tablas son exactamente las de 6.3. No existen módulos ni rutas de Jobs, workflows, repositorios, worktrees, Codex, Antigravity, políticas, aprobaciones, autenticación ni `doctor` (búsqueda de texto y listado de rutas).
 
 ## 9. RIESGOS Y REVERSIÓN

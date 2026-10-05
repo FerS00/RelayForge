@@ -1,3 +1,5 @@
+> Material histórico de POCs/validaciones previas. Contrasta procedimientos y resultados con el [plan vigente](PLAN_PROYECTO.md) y las guías actuales de instalación/Docker. No acredita aceptación del despliegue nuevo.
+
 # Guía — cerrar las reservas R-1, R-2 y R-4a en la laptop
 
 Sesión única de unos 40 minutos con **un solo reinicio**. Resuelve:

@@ -28,11 +28,14 @@ class ClaudeAdapter:
     def build_run(self, spec: RunSpec) -> LaunchPlan:
         argv = [self.executable, "-p", "--output-format", "stream-json", "--verbose"]
         argv.extend(["--resume", spec.session_id] if spec.resume else ["--session-id", spec.session_id])
-        if self.model:
-            argv.extend(["--model", self.model])
+        model = spec.model or self.model
+        if model:
+            argv.extend(["--model", model])
         argv.extend(
             ["--include-partial-messages", "--permission-mode", "default", "--disallowed-tools", *_DENIED]
         )
+        if spec.schema_path is not None:
+            argv.extend(["--json-schema", str(spec.schema_path)])
         return LaunchPlan(tuple(argv), Path(spec.cwd), spec.prompt)
 
     def parse_line(self, line: bytes, state: ParseState) -> list[NormalizedEvent]:

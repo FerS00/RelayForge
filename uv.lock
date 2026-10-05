@@ -620,6 +620,7 @@ source = { editable = "." }
 dependencies = [
     { name = "alembic" },
     { name = "fastapi" },
+    { name = "psutil" },
     { name = "pydantic-settings" },
     { name = "pyyaml" },
     { name = "sqlalchemy" },
@@ -630,7 +631,6 @@ dependencies = [
 dev = [
     { name = "httpx" },
     { name = "mypy" },
-    { name = "psutil" },
     { name = "pytest" },
     { name = "ruff" },
     { name = "types-pyyaml" },
@@ -640,6 +640,7 @@ dev = [
 requires-dist = [
     { name = "alembic", specifier = ">=1.16,<2" },
     { name = "fastapi", specifier = ">=0.116,<1" },
+    { name = "psutil", specifier = ">=7,<8" },
     { name = "pydantic-settings", specifier = ">=2.10,<3" },
     { name = "pyyaml", specifier = ">=6,<7" },
     { name = "sqlalchemy", specifier = ">=2.0,<3" },
@@ -650,7 +651,6 @@ requires-dist = [
 dev = [
     { name = "httpx", specifier = ">=0.28,<1" },
     { name = "mypy", specifier = ">=1.17,<2" },
-    { name = "psutil", specifier = ">=7,<8" },
     { name = "pytest", specifier = ">=8.4,<9" },
     { name = "ruff", specifier = ">=0.12,<1" },
     { name = "types-pyyaml", specifier = ">=6,<7" },

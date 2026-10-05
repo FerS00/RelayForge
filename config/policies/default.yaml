@@ -1,0 +1,20 @@
+version: 1
+defaults:
+  git.push: ask
+  git.commit: ask
+  git.merge: deny
+  git.force_push: deny
+  git.push_protected_branch: deny
+profiles:
+  default: {}
+workflows:
+  plan: {}
+  trivial: {}
+  feature: {}
+  security: {}
+path_escalations:
+  - pattern: "**/auth/**"
+    workflow: security
+  - pattern: "**/security/**"
+    workflow: security
+overrides: []

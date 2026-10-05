@@ -16,7 +16,7 @@ def records(name: str):
     ]
 
 
-def test_real_capture_text_fragments_and_result() -> None:
+def test_synthetic_fixture_emits_text_and_result() -> None:
     state = ParseState()
     emitted = [
         event for row in records("text_turn.ndjson") for event in parse_line(json.dumps(row).encode(), state)
@@ -26,7 +26,7 @@ def test_real_capture_text_fragments_and_result() -> None:
     assert not any("thinking" in str(event.data).lower() for event in emitted)
 
 
-def test_real_resume_capture_contains_resumed_text() -> None:
+def test_synthetic_resume_fixture_contains_text_and_delta() -> None:
     emitted = [
         event
         for row in records("resume_turn.ndjson")

@@ -15,6 +15,7 @@ from relayforge.adapters.claude.orchestrator import ClaudeOrchestrator
 from relayforge.core.events import EventBus
 from relayforge.core.ids import new_ulid
 from relayforge.db.models import Conversation, Event, Message, utc_now
+from relayforge.security.redact import StreamingRedactor, redact_text, redact_value
 
 logger = logging.getLogger("relayforge")
 
@@ -77,6 +78,7 @@ class ChatService:
     def send_message(
         self, conversation_id: str, content: str, idempotency_key: str
     ) -> tuple[dict[str, str] | None, str]:
+        content = redact_text(content)
         with self.sessions.begin() as session:
             conversation = session.get(Conversation, conversation_id)
             if conversation is None:
@@ -122,23 +124,39 @@ class ChatService:
 
     async def _run_turn(self, context: ConversationContext, step_id: str, prompt: str) -> None:
         fragment_ids: dict[int, str] = {}
+        stream_redactors: dict[int, StreamingRedactor] = {}
         outcome, detail, duration_ms = "invalid_output", None, 0
         try:
             async for event in self.orchestrator.chat(context, prompt):
                 if event.type == "agent.message.delta":
                     index = int(event.data.pop("_message_index", 0))
                     message_id = fragment_ids.setdefault(index, new_ulid())
-                    data = {"message_id": message_id, "text": event.data["text"]}
-                    await self._persist_publish(context.conversation_id, event, data, None)
+                    redactor = stream_redactors.setdefault(index, StreamingRedactor())
+                    safe_fragment = redactor.push(event.data["text"])
+                    if safe_fragment:
+                        data = {"message_id": message_id, "text": safe_fragment}
+                        await self._persist_publish(context.conversation_id, event, data, None)
                 elif event.type == "agent.message":
                     index = int(event.data.pop("_message_index", 0))
                     message_id = fragment_ids.get(index, new_ulid())
-                    data = {"message_id": message_id, "text": event.data["text"]}
+                    message_redactor = stream_redactors.get(index)
+                    if message_redactor is not None:
+                        del stream_redactors[index]
+                        tail = message_redactor.finish()
+                        if tail:
+                            await self._persist_publish(
+                                context.conversation_id,
+                                NormalizedEvent("agent.message.delta", "claude", step_id, {}),
+                                {"message_id": message_id, "text": tail},
+                                None,
+                            )
+                    safe_text = redact_text(event.data["text"])
+                    data = {"message_id": message_id, "text": safe_text}
                     row = Message(
                         id=message_id,
                         conversation_id=context.conversation_id,
                         role="orchestrator",
-                        content=event.data["text"],
+                        content=safe_text,
                         step_id=step_id,
                         status="complete",
                         ts=utc_now(),
@@ -206,6 +224,7 @@ class ChatService:
     async def _persist_publish(
         self, conversation_id: str, event: NormalizedEvent, data: dict[str, Any], message: Message | None
     ) -> None:
+        data = redact_value(data)
         now = utc_now()
         with self.sessions.begin() as session:
             stored = self._new_event(

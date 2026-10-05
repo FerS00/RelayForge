@@ -55,7 +55,30 @@ def main() -> int:
             encoding="utf-8",
         )
     scenario = os.getenv("FAKE_AGENT_SCENARIO", "ok")
-    if scenario == "blocks":
+    if "--json-schema" in sys.argv:
+        if os.getenv("FAKE_PLAN_FAILURE"):
+            write({"type": "result", "is_error": True, "result": os.environ["FAKE_PLAN_FAILURE"]})
+            return 1
+        if os.getenv("FAKE_PLAN_DELAY") == "1":
+            time.sleep(3)
+        if os.getenv("FAKE_PLAN_INVALID") == "1":
+            write({"type": "result", "is_error": False, "structured_output": {"objective": "incomplete"}})
+        else:
+            write(
+                {
+                    "type": "result",
+                    "is_error": False,
+                    "duration_ms": 1,
+                    "structured_output": {
+                        "objective": "Plan de prueba",
+                        "summary": "Validar una solicitud sin ejecutar herramientas.",
+                        "steps": ["Inspeccionar el alcance", "Proponer la secuencia de trabajo"],
+                        "risks": ["Ninguno en la fixture"],
+                        "suggested_workflow": os.getenv("FAKE_SUGGESTED_WORKFLOW", "feature"),
+                    },
+                }
+            )
+    elif scenario == "blocks":
         sys.stderr.write("FAKE_STDERR_MARKER\n")
         write({"type": "system", "subtype": "init", "skills": ["FAKE_SKILL_MARKER"]})
         write(
@@ -110,6 +133,8 @@ def main() -> int:
         stream("first response", delay=0.25)
         time.sleep(1.1)
         stream("second response", delay=0.25)
+    elif scenario == "secret_output":
+        stream("password=synthetic-stream-secret")
     else:
         stream("fake answer")
     if scenario not in {"error_result", "no_result", "spawn_children"}:

@@ -27,11 +27,22 @@ def free_socket() -> tuple[socket.socket, int]:
     return sock, sock.getsockname()[1]
 
 
+def auth_headers(app, port: int) -> dict[str, str]:
+    csrf = app.state.test_csrf_token
+    return {
+        "Host": f"127.0.0.1:{port}",
+        "Origin": f"http://127.0.0.1:{port}",
+        "Tailscale-User-Login": "owner@example.test",
+        "Cookie": f"rf_session={app.state.test_session_token}; rf_csrf={csrf}",
+        "X-CSRF-Token": csrf,
+    }
+
+
 @contextmanager
-def stream_when_ready(url: str, timeout: httpx.Timeout) -> Iterator[httpx.Response]:
+def stream_when_ready(url: str, timeout: httpx.Timeout, headers: dict[str, str]) -> Iterator[httpx.Response]:
     deadline = time.monotonic() + 5
     while time.monotonic() < deadline:
-        manager = httpx.stream("GET", url, timeout=timeout)
+        manager = httpx.stream("GET", url, headers=headers, timeout=timeout)
         try:
             response = manager.__enter__()
         except (httpx.ConnectError, httpx.ConnectTimeout):
@@ -68,13 +79,14 @@ def test_uvicorn_stream_delivers_saved_events(app, client, monkeypatch):
     timeout = httpx.Timeout(connect=1, read=10, write=5, pool=5)
     url = f"http://127.0.0.1:{port}/api/stream?conversation={conversation['id']}"
     try:
-        with stream_when_ready(url, timeout) as response:
+        headers = auth_headers(app, port)
+        with stream_when_ready(url, timeout, headers) as response:
             assert response.status_code == 200
             lines = response.iter_lines()
             httpx.post(
                 f"http://127.0.0.1:{port}/api/conversations/{conversation['id']}/messages",
                 json={"content": "sse"},
-                headers={"Idempotency-Key": "sse-1"},
+                headers={**headers, "Idempotency-Key": "sse-1"},
                 timeout=timeout,
             )
             blocks = []
@@ -92,7 +104,7 @@ def test_uvicorn_stream_delivers_saved_events(app, client, monkeypatch):
             second = httpx.post(
                 f"http://127.0.0.1:{port}/api/conversations/{conversation['id']}/messages",
                 json={"content": "second"},
-                headers={"Idempotency-Key": "sse-2"},
+                headers={**headers, "Idempotency-Key": "sse-2"},
                 timeout=timeout,
             )
             assert second.status_code == 202
@@ -120,12 +132,13 @@ def test_agent_messages_reach_sse_within_one_second(app, client, monkeypatch, tm
     url = f"http://127.0.0.1:{port}/api/stream?conversation={conversation['id']}"
     received_messages: list[tuple[str, float]] = []
     try:
-        with stream_when_ready(url, timeout) as response:
+        headers = auth_headers(app, port)
+        with stream_when_ready(url, timeout, headers) as response:
             assert response.status_code == 200
             posted = httpx.post(
                 f"http://127.0.0.1:{port}/api/conversations/{conversation['id']}/messages",
                 json={"content": "latency"},
-                headers={"Idempotency-Key": "latency-1"},
+                headers={**headers, "Idempotency-Key": "latency-1"},
                 timeout=timeout,
             )
             assert posted.status_code == 202
@@ -172,13 +185,14 @@ def test_stream_subscribes_before_returning_headers(app, client):
                 with httpx.stream(
                     "GET",
                     f"http://127.0.0.1:{port}/api/stream?conversation={conversation['id']}",
+                    headers=auth_headers(app, port),
                     timeout=1,
                 ) as response:
                     assert response.status_code == 200
                     posted = httpx.post(
                         f"http://127.0.0.1:{port}/api/conversations/{conversation['id']}/messages",
                         json={"content": "after headers"},
-                        headers={"Idempotency-Key": "after-headers"},
+                        headers={**auth_headers(app, port), "Idempotency-Key": "after-headers"},
                     )
                     assert posted.status_code == 202
                     received = []

@@ -1,0 +1,6 @@
+version: 1
+checks: true
+audit: false
+plan_approval: never
+audit_profile: default
+max_iterations: 1

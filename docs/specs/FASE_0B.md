@@ -1,3 +1,5 @@
+> Especificación histórica. Las referencias numeradas al plan corresponden al [plan anterior archivado](../archive/PLAN_PROYECTO_2026-10-05_PREVIO.md); para alcance/estado y nuevas fases consulta el [plan vigente](../PLAN_PROYECTO.md). Este aviso no cambia sus criterios previamente aprobados.
+
 # ESPECIFICACIÓN TÉCNICA (PARA CODEX) — Fase 0B: POC-04, 07, 08 y 09
 
 - Plan: `docs/PLAN_PROYECTO.md`, Fase 0 (aprobada), secciones 14, 17, 20, 25, 33 y 38.

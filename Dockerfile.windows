@@ -1,0 +1,57 @@
+# escape=`
+FROM mcr.microsoft.com/windows/servercore:ltsc2019
+
+SHELL ["powershell", "-NoLogo", "-ExecutionPolicy", "Bypass", "-Command"]
+WORKDIR C:\app
+
+ARG PYTHON_VERSION=3.13.16
+ARG PYTHON_SHA256=fb4f9f5d438b2396da0086dc70b935c530cb578e37adc6d354f7ad2037fee83b
+ARG NODE_VERSION=24.21.0
+ARG NODE_SHA256=bb0eaee134f9357f22aea915ee793343e627aefc1e66488164bac6915bce2cac
+ARG GIT_VERSION=2.55.0
+ARG CLAUDE_CODE_VERSION=2.1.288
+ARG CODEX_CLI_VERSION=0.159.2
+ARG AGY_CLI_VERSION=1.2.16
+ARG AGY_CLI_BUILD=5594158052802560
+ARG AGY_CLI_SHA512=796d9a15983bedb7db7f517d94d35a9aca93b54f4c6e14dd4ce26d5d56ee9924f96ac42f184a8ab3dfca36a3140c9a60fa3697c363fd847d3f4d32340664f7e9
+
+RUN $ErrorActionPreference = 'Stop'; $pythonInstaller = Join-Path $env:TEMP 'python-installer.exe'; $pythonUri = 'https://www.python.org/ftp/python/' + $env:PYTHON_VERSION + '/python-' + $env:PYTHON_VERSION + '-amd64.exe'; curl.exe --fail --location --retry 3 --connect-timeout 20 --max-time 300 --output $pythonInstaller $pythonUri; if ($LASTEXITCODE -ne 0) { throw "Python download failed with curl exit code $LASTEXITCODE" }; if ((Get-FileHash -Algorithm SHA256 $pythonInstaller).Hash.ToLowerInvariant() -ne $env:PYTHON_SHA256) { throw 'Python installer SHA-256 mismatch.' }; & $pythonInstaller /quiet InstallAllUsers=0 TargetDir=C:\Python313 PrependPath=0 Include_launcher=0 Include_test=0; if ($LASTEXITCODE -ne 0) { throw "Python installer exited with $LASTEXITCODE" }
+RUN $ErrorActionPreference = 'Stop'; $pythonInstaller = Join-Path $env:TEMP 'python-installer.exe'; if (Test-Path $pythonInstaller) { Remove-Item -Force $pythonInstaller }; $nodeInstaller = Join-Path $env:TEMP 'node-installer.msi'; $nodeUri = 'https://nodejs.org/dist/v' + $env:NODE_VERSION + '/node-v' + $env:NODE_VERSION + '-x64.msi'; curl.exe --fail --location --retry 3 --connect-timeout 20 --max-time 300 --output $nodeInstaller $nodeUri; if ($LASTEXITCODE -ne 0) { throw "Node.js download failed with curl exit code $LASTEXITCODE" }; if ((Get-FileHash -Algorithm SHA256 $nodeInstaller).Hash.ToLowerInvariant() -ne $env:NODE_SHA256) { throw 'Node.js installer SHA-256 mismatch.' }; & msiexec.exe /i $nodeInstaller /qn /norestart; if ($LASTEXITCODE -notin @(0, 3010)) { throw "Node.js installer exited with $LASTEXITCODE" }
+RUN $ErrorActionPreference = 'Stop'; $nodeInstaller = Join-Path $env:TEMP 'node-installer.msi'; if (Test-Path $nodeInstaller) { Remove-Item -Force $nodeInstaller }; $gitInstaller = Join-Path $env:TEMP 'git-installer.exe'; $gitUri = 'https://github.com/git-for-windows/git/releases/download/v' + $env:GIT_VERSION + '.windows.1/Git-' + $env:GIT_VERSION + '-64-bit.exe'; curl.exe --fail --location --retry 3 --connect-timeout 20 --max-time 300 --output $gitInstaller $gitUri; if ($LASTEXITCODE -ne 0) { throw "Git for Windows download failed with curl exit code $LASTEXITCODE" }; & $gitInstaller /VERYSILENT /NORESTART /NOCANCEL /SP- /SUPPRESSMSGBOXES '/DIR=C:\Program Files\Git'; if ($LASTEXITCODE -ne 0) { throw "Git for Windows installer exited with $LASTEXITCODE" }
+
+ENV PATH="C:\Python313;C:\Python313\Scripts;C:\Program Files\nodejs;C:\Program Files\Git\cmd;C:\tools\codex;C:\tools\npm-global;C:\tools\agy\bin;C:\Windows\System32\WindowsPowerShell\v1.0;C:\Windows\System32;C:\Windows"
+ENV PYTHONUTF8=1
+ENV CLAUDE_CODE_GIT_BASH_PATH="C:\Program Files\Git\bin\bash.exe"
+ENV DISABLE_AUTOUPDATER=1
+ENV npm_config_prefix="C:\tools\npm-global"
+ENV PYTHONPATH="C:\app\src"
+
+RUN $ErrorActionPreference = 'Stop'; $gitInstaller = Join-Path $env:TEMP 'git-installer.exe'; if (Test-Path $gitInstaller) { Remove-Item -Force $gitInstaller }; New-Item -ItemType Directory -Force C:\tools\npm-global, C:\tools\codex, C:\tools\agy\bin, C:\app\src, C:\app\web, C:\app\config | Out-Null; python -m pip install --no-cache-dir --upgrade pip; if ($LASTEXITCODE -ne 0) { throw 'pip install failed.' }; npm.cmd install --global '--allow-scripts=@anthropic-ai/claude-code,@openai/codex' "@anthropic-ai/claude-code@$env:CLAUDE_CODE_VERSION" "@openai/codex@$env:CODEX_CLI_VERSION"; if ($LASTEXITCODE -ne 0) { throw 'Agent CLI npm install failed.' }
+RUN $ErrorActionPreference = 'Stop'; $nativeCodex = @(Get-ChildItem -LiteralPath C:\tools\npm-global\node_modules\@openai -Filter codex.exe -File -Recurse); if ($nativeCodex.Count -ne 1) { throw 'Expected exactly one native Codex executable.' }; Copy-Item -Path (Join-Path $nativeCodex[0].DirectoryName '*') -Destination C:\tools\codex -Recurse; codex.exe --version; if ($LASTEXITCODE -ne 0) { throw 'Codex CLI launch check failed.' }
+RUN $ErrorActionPreference = 'Stop'; $agyInstaller = Join-Path $env:TEMP 'agy.exe'; $agyUri = 'https://storage.googleapis.com/antigravity-public/antigravity-cli/' + $env:AGY_CLI_VERSION + '-' + $env:AGY_CLI_BUILD + '/windows-x64/cli_windows_x64.exe'; curl.exe --fail --location --retry 3 --connect-timeout 20 --max-time 300 --output $agyInstaller $agyUri; if ($LASTEXITCODE -ne 0) { throw ('Antigravity CLI download failed with curl exit code ' + $LASTEXITCODE) }; if ((Get-FileHash -Algorithm SHA512 $agyInstaller).Hash.ToLowerInvariant() -ne $env:AGY_CLI_SHA512) { throw 'Antigravity CLI SHA-512 mismatch.' }; Move-Item -LiteralPath $agyInstaller -Destination C:\tools\agy\bin\agy.exe; agy --version; if ($LASTEXITCODE -ne 0) { throw 'Antigravity CLI launch check failed.' }
+
+COPY pyproject.toml README.md ./
+COPY src/ C:/app/src/
+COPY config/ C:/app/config/
+RUN python -m pip install --no-cache-dir .
+
+COPY web/package.json web/package-lock.json C:/app/web/
+WORKDIR C:\app\web
+RUN npm.cmd ci
+COPY web/ C:/app/web/
+RUN npm.cmd run build
+
+RUN New-Item -ItemType Directory -Force C:\relayforge-home, C:\workspace, C:\projects, C:\relayforge-claude, C:\relayforge-codex | Out-Null; icacls C:\relayforge-home /grant '*S-1-5-93-2-2:(OI)(CI)M' | Out-Null; icacls C:\workspace /grant '*S-1-5-93-2-2:(OI)(CI)M' | Out-Null; icacls C:\projects /grant '*S-1-5-93-2-2:(OI)(CI)M' | Out-Null; icacls C:\relayforge-claude /grant '*S-1-5-93-2-2:(OI)(CI)M' | Out-Null; icacls C:\relayforge-codex /grant '*S-1-5-93-2-2:(OI)(CI)M' | Out-Null
+
+WORKDIR C:\app
+USER ContainerUser
+ENV RELAYFORGE_HOME="C:\relayforge-home"
+ENV RELAYFORGE_WORKSPACE_DIR="C:\workspace"
+ENV RELAYFORGE_PROJECTS_ROOT="C:\projects"
+ENV USERPROFILE="C:\relayforge-claude"
+ENV HOME="C:\relayforge-claude"
+ENV LOCALAPPDATA="C:\relayforge-claude\AppData\Local"
+ENV CODEX_HOME="C:\relayforge-codex"
+EXPOSE 8792
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 CMD ["C:\\Python313\\python.exe", "-c", "import urllib.request; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8792/api/auth/status', headers={'Host': 'localhost'}), timeout=4)"]
+CMD ["C:\\Python313\\Scripts\\relayforge.exe", "serve"]
