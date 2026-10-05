@@ -29,3 +29,14 @@ pocs/poc11_tailscale.ndjson
 web/dist/
 .playwright-cli/
 .pytest-pairing-review/
+
+# Agent configuration, planning, and AI internal specs
+AGENTS.md
+CLAUDE.md
+docs/PLAN_PROYECTO.md
+docs/ESTADO_TRABAJO.md
+docs/POC_RESULTADOS.md
+docs/GUIA_LAPTOP_*.md
+docs/specs/
+docs/archive/
+docs/evidence/
