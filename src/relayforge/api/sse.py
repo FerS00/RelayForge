@@ -8,7 +8,7 @@ from relayforge.adapters.base import NormalizedEvent
 
 
 async def encode_stream(
-    iterator: AsyncGenerator[NormalizedEvent], conversation_id: str
+    iterator: AsyncGenerator[NormalizedEvent], conversation_id: str, *, job_id: str | None = None
 ) -> AsyncGenerator[str]:
     pending: asyncio.Task[NormalizedEvent] = asyncio.create_task(iterator.__anext__())
     try:
@@ -32,8 +32,11 @@ async def encode_stream(
                 "step": event.step_id,
                 "data": data,
             }
+            if job_id is not None:
+                document["job"] = job_id
             encoded = json.dumps(document, ensure_ascii=False, separators=(",", ":"))
-            yield f"id: {seq}\nevent: conversation.event\ndata: {encoded}\n\n"
+            event_name = "job.event" if job_id is not None else "conversation.event"
+            yield f"id: {seq}\nevent: {event_name}\ndata: {encoded}\n\n"
             pending = asyncio.create_task(iterator.__anext__())
     finally:
         pending.cancel()

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -53,3 +54,77 @@ def test_settings_reject_unsafe_claude_model(tmp_path: Path, monkeypatch: pytest
     workspace.mkdir()
     with pytest.raises(SettingsError, match="modelo de Claude"):
         load_settings(workspace_dir=workspace, claude_model="model&argument")
+
+
+def test_settings_fail_closed_for_non_loopback_bind_and_wildcard_allowlists(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    with pytest.raises(SettingsError, match="127.0.0.1"):
+        load_settings(workspace_dir=workspace, bind="0.0.0.0")
+    with pytest.raises(SettingsError, match="valores exactos"):
+        load_settings(workspace_dir=workspace, allowed_hosts="*.example.test")
+
+
+def test_settings_normalize_exact_allowlists(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    settings = load_settings(
+        workspace_dir=workspace,
+        allowed_tailscale_logins=" Owner@Example.Test,owner@example.test ",
+        allowed_hosts="RelayForge.Example.Test",
+    )
+    assert settings.allowed_tailscale_logins == ("owner@example.test",)
+    assert settings.allowed_hosts == ("relayforge.example.test",)
+
+
+def test_settings_parse_json_allowlists_from_environment(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    monkeypatch.setenv("RELAYFORGE_ALLOWED_TAILSCALE_LOGINS", '["Owner@Example.Test"]')
+    monkeypatch.setenv("RELAYFORGE_ALLOWED_HOSTS", '["RelayForge.Example.Test"]')
+
+    settings = load_settings(workspace_dir=workspace)
+
+    assert settings.allowed_tailscale_logins == ("owner@example.test",)
+    assert settings.allowed_hosts == ("relayforge.example.test",)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="El modo contenedor usa APIs Windows.")
+def test_settings_accept_windows_container_with_exact_nat_gateway(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    settings = load_settings(
+        workspace_dir=workspace,
+        bind="0.0.0.0",
+        container_mode=True,
+        trusted_proxy_ip="172.30.0.1",
+    )
+
+    assert settings.bind == "0.0.0.0"
+    assert settings.container_mode is True
+    assert settings.trusted_proxy_ip == "172.30.0.1"
+
+
+@pytest.mark.parametrize("proxy_ip", ["", "invalid", "127.0.0.1", "0.0.0.0", "224.0.0.1", "::1"])
+@pytest.mark.skipif(os.name != "nt", reason="El modo contenedor usa APIs Windows.")
+def test_settings_reject_container_proxy_unless_exact_ipv4_unicast(
+    tmp_path: Path, monkeypatch, proxy_ip: str
+) -> None:
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    with pytest.raises(SettingsError, match="TRUSTED_PROXY_IP"):
+        load_settings(
+            workspace_dir=workspace,
+            bind="0.0.0.0",
+            container_mode=True,
+            trusted_proxy_ip=proxy_ip,
+        )

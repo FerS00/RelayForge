@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import time
 from pathlib import Path
 
@@ -100,3 +101,42 @@ def test_kill_and_kill_all_tolerate_exited_process(
     assert supervisor.exit_code(handle) == 0
     supervisor.kill(handle)
     supervisor.kill_all()
+
+
+def test_completed_process_logs_are_redacted_before_they_remain_on_disk(tmp_path: Path) -> None:
+    supervisor = Supervisor()
+    handle = supervisor.start(
+        LaunchPlan(
+            (
+                sys.executable,
+                "-c",
+                'import sys; print(\'{"api_key":"synthetic-secret-value"}\'); '
+                "print('password=synthetic-password', file=sys.stderr)",
+            ),
+            tmp_path,
+            "",
+        ),
+        output_path=tmp_path / "stdout.ndjson",
+        stderr_path=tmp_path / "stderr.log",
+    )
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline and supervisor.exit_code(handle) is None:
+        time.sleep(0.02)
+    assert supervisor.exit_code(handle) == 0
+    supervisor.kill(handle)
+    saved = handle.output_path.read_text(encoding="utf-8") + handle.stderr_path.read_text(encoding="utf-8")
+    assert "synthetic-secret-value" not in saved
+    assert "synthetic-password" not in saved
+
+
+def test_terminate_process_identity_checks_creation_time(
+    tmp_path: Path, fake_launcher: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    supervisor, handle = start_fake(tmp_path, fake_launcher, "spawn_children", monkeypatch)
+    time.sleep(0.3)
+    assert not supervisor.terminate_process_identity(handle.pid, handle.create_time + 1000)
+    assert supervisor.terminate_process_identity(handle.pid, handle.create_time)
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline and psutil.pid_exists(handle.pid):
+        time.sleep(0.02)
+    assert not psutil.pid_exists(handle.pid)

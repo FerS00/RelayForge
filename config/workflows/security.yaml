@@ -1,0 +1,6 @@
+version: 1
+checks: true
+audit: true
+plan_approval: ask
+audit_profile: security
+max_iterations: 3

@@ -1,3 +1,5 @@
+> Especificación histórica. Las referencias numeradas al plan corresponden al [plan anterior archivado](../archive/PLAN_PROYECTO_2026-10-05_PREVIO.md); para alcance/estado y nuevas fases consulta el [plan vigente](../PLAN_PROYECTO.md). Este aviso no cambia sus criterios previamente aprobados.
+
 # ESPECIFICACIÓN TÉCNICA (PARA CODEX) — Fase 0C: POC-10 (arranque automático) y POC-11 (Tailscale serve)
 
 - Plan: `docs/PLAN_PROYECTO.md`, Fase 0 (aprobada), secciones 26 (T9, T10), 31, 32 y 38 (POC-10 y POC-11).

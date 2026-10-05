@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ConversationEvent } from '../api'
+import type { ConversationEvent, JobEvent } from '../api'
 
 export function useEventStream(conversationId: string | undefined, onEvent: (event: ConversationEvent) => void, onReconnect: () => void) {
   const latest = useRef(0)
@@ -28,4 +28,30 @@ export function useEventStream(conversationId: string | undefined, onEvent: (eve
     return () => { stream.close(); setConnection(null) }
   }, [conversationId])
   return Boolean(conversationId && connection?.id === conversationId && connection.open)
+}
+
+export function useJobEventStream(jobId: string | undefined, onEvent: (event: JobEvent) => void, onReconnect: () => void) {
+  const latest = useRef(0)
+  const onEventRef = useRef(onEvent)
+  const onReconnectRef = useRef(onReconnect)
+  onEventRef.current = onEvent
+  onReconnectRef.current = onReconnect
+
+  useEffect(() => {
+    if (!jobId) return
+    latest.current = 0
+    let connected = false
+    const stream = new EventSource(`/api/jobs/${encodeURIComponent(jobId)}/events`)
+    stream.onopen = () => { connected = true }
+    stream.addEventListener('job.event', (message) => {
+      const event = JSON.parse((message as MessageEvent<string>).data) as JobEvent
+      if (event.seq <= latest.current) return
+      latest.current = event.seq
+      onEventRef.current(event)
+    })
+    stream.onerror = () => {
+      if (connected) onReconnectRef.current()
+    }
+    return () => stream.close()
+  }, [jobId])
 }

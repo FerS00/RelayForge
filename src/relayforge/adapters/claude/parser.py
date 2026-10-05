@@ -49,10 +49,22 @@ def parse_line(line: bytes, state: ParseState) -> list[NormalizedEvent]:
         state.result_seen = True
         state.result_is_error = is_error
         data: dict[str, Any] = {"is_error": is_error}
+        structured_output = record.get("structured_output")
+        if isinstance(structured_output, dict):
+            state.structured_output = structured_output
+            data["structured_output"] = structured_output
         if is_error:
             detail_value = record.get("result")
             if isinstance(detail_value, str):
                 data["detail"] = detail_value[:300]
+                state.failure_detail = detail_value[:2000]
+        usage = record.get("usage")
+        if isinstance(usage, dict):
+            state.usage = {
+                key: usage[key]
+                for key in ("input_tokens", "output_tokens")
+                if isinstance(usage.get(key), int) and usage[key] >= 0
+            }
         duration = record.get("duration_ms")
         if isinstance(duration, int):
             data["duration_ms"] = duration

@@ -1,5 +1,7 @@
+import json
 import signal
 import socket
+import subprocess
 
 import pytest
 
@@ -15,6 +17,42 @@ def test_cli_reports_missing_workspace(monkeypatch, capsys) -> None:
     assert "obligatorio" in capsys.readouterr().err
 
 
+def test_cli_repo_add_registers_existing_repository(monkeypatch, capsys, tmp_path) -> None:
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    subprocess.run(["git", "init", "--initial-branch=main", str(repository)], check=True, capture_output=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repository),
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@localhost",
+            "commit",
+            "--allow-empty",
+            "-m",
+            "init",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    settings = Settings(
+        workspace_dir=workspace,
+        port=8787,
+        home=tmp_path / "home",
+        projects_root=tmp_path / "projects",
+        claude_executable="claude",
+        codex_executable="codex",
+    )
+    monkeypatch.setattr(cli, "load_settings", lambda **_: settings)
+    assert main(["repo", "add", "fixture", str(repository)]) == 0
+    assert json.loads(capsys.readouterr().out)["repository"]["name"] == "fixture"
+
+
 def test_cli_rejects_occupied_port_without_printing_url(monkeypatch, capsys, tmp_path) -> None:
     occupied = socket.socket()
     occupied.bind(("127.0.0.1", 0))
@@ -24,7 +62,9 @@ def test_cli_rejects_occupied_port_without_printing_url(monkeypatch, capsys, tmp
         workspace_dir=tmp_path,
         port=port,
         home=tmp_path / "home",
+        projects_root=tmp_path / "projects",
         claude_executable="claude",
+        codex_executable="codex",
     )
     monkeypatch.setattr(cli, "load_settings", lambda **_: settings)
     monkeypatch.setattr(cli.shutil, "which", lambda _: "claude.exe")
@@ -54,7 +94,9 @@ def test_cli_returns_zero_after_shutdown_signal(monkeypatch, tmp_path, signal_na
         workspace_dir=workspace,
         port=0,
         home=tmp_path / "home",
+        projects_root=tmp_path / "projects",
         claude_executable="claude",
+        codex_executable="codex",
     )
     module_path = repository / "src" / "relayforge" / "cli.py"
     monkeypatch.setattr(cli, "__file__", str(module_path))

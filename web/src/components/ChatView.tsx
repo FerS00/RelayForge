@@ -1,4 +1,6 @@
 import { useState, type FormEvent, type KeyboardEvent } from 'react'
+import ReactMarkdown from 'react-markdown'
+import rehypeSanitize from 'rehype-sanitize'
 import type { Message } from '../api'
 import styles from '../styles.module.css'
 
@@ -24,7 +26,7 @@ export function ChatView({ messages, active, onSend, error, onMenu }: Props) {
       {messages.length === 0 && <div className={styles.empty}><h1>¿En qué puedo ayudarte?</h1><p>Tu conversación se ejecuta en el directorio de trabajo configurado.</p></div>}
       {messages.map((message) => <article key={message.id} className={`${styles.message} ${message.role === 'user' ? styles.userMessage : styles.agentMessage}`}>
         <div className={styles.messageRole}>{message.role === 'user' ? 'Tú' : 'Claude'}</div>
-        <div className={styles.messageText}>{message.content}</div>
+        <div className={styles.messageText}><ReactMarkdown rehypePlugins={[rehypeSanitize]} skipHtml>{message.content}</ReactMarkdown></div>
       </article>)}
       {active && <div className={styles.activity}>Claude está respondiendo…</div>}
       {error && <div role="alert" className={styles.error}>{error}</div>}

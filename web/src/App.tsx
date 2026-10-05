@@ -6,6 +6,34 @@ import { ConversationList } from './components/ConversationList'
 import { ChatView } from './components/ChatView'
 import { useEventStream } from './lib/eventStream'
 import styles from './styles.module.css'
+import { Dashboard } from './pages/Dashboard'
+import { NewTask } from './pages/NewTask'
+import { JobDetail } from './pages/JobDetail'
+import { Repositories } from './pages/Repositories'
+import { Pairing } from './pages/Pairing'
+import { Agents } from './pages/Agents'
+import { Approvals } from './pages/Approvals'
+import { Metrics } from './pages/Metrics'
+import { Projects } from './pages/Projects'
+
+function SessionGate() {
+  const auth = useQuery({ queryKey: ['auth'], queryFn: api.authStatus, retry: false })
+  if (auth.isPending) return <main className={styles.welcome}>Comprobando sesión…</main>
+  if (auth.isError || !auth.data?.authenticated) return <Pairing />
+  return <Routes>
+    <Route path="/" element={<Projects />} />
+    <Route path="/projects/:id" element={<Projects />} />
+    <Route path="/chat" element={<Workspace />} />
+    <Route path="/c/:id" element={<Workspace />} />
+    <Route path="/jobs" element={<Dashboard />} />
+    <Route path="/repos" element={<Repositories />} />
+    <Route path="/jobs/new" element={<NewTask />} />
+    <Route path="/jobs/:id" element={<JobDetail />} />
+    <Route path="/agents" element={<Agents />} />
+    <Route path="/approvals" element={<Approvals />} />
+    <Route path="/metrics" element={<Metrics />} />
+  </Routes>
+}
 
 function Workspace() {
   const { id } = useParams()
@@ -48,11 +76,11 @@ function Workspace() {
   const ephemeral = Object.entries(streamMessages).filter(([messageId]) => !knownIds.has(messageId)).map(([id, content]) => ({ id, step_id: '', role: 'orchestrator' as const, content, status: 'complete' as const, ts: '' }))
   return <div className={styles.shell}>
     {mobileMenu && <button className={styles.backdrop} aria-label="Cerrar conversaciones" onClick={() => setMobileMenu(false)} />}
-    <div className={`${styles.sidebarWrap} ${mobileMenu ? styles.sidebarOpen : ''}`}><ConversationList conversations={conversations.data ?? []} activeId={id} onSelect={(conversationId) => navigate(`/c/${conversationId}`)} onCreate={() => create.mutate()} onClose={() => setMobileMenu(false)} /></div>
-    {id ? <ChatView messages={[...combined, ...ephemeral]} active={active || Boolean(messages.data?.active_step)} onSend={(content) => send.mutate(content)} error={send.error?.message} onMenu={() => setMobileMenu(true)} /> : <main className={styles.welcome}><button className={styles.menuButton} onClick={() => setMobileMenu(true)} aria-label="Abrir conversaciones">☰</button><h1>RelayForge</h1><p>Inicia una conversación con Claude Code.</p><button className={styles.primary} onClick={() => create.mutate()}>Nueva conversación</button><Link className={styles.screenReader} to="/">Inicio</Link></main>}
+    <div className={`${styles.sidebarWrap} ${mobileMenu ? styles.sidebarOpen : ''}`}><ConversationList conversations={conversations.data ?? []} activeId={id} onSelect={(conversationId) => navigate(`/c/${conversationId}`)} onCreate={() => create.mutate()} onClose={() => setMobileMenu(false)} createError={id ? create.error?.message : undefined} /></div>
+    {id ? <ChatView messages={[...combined, ...ephemeral]} active={active || Boolean(messages.data?.active_step)} onSend={(content) => send.mutate(content)} error={send.error?.message} onMenu={() => setMobileMenu(true)} /> : <main className={styles.welcome}><button className={styles.menuButton} onClick={() => setMobileMenu(true)} aria-label="Abrir conversaciones">☰</button><h1>RelayForge</h1><p>Inicia una conversación con Claude Code.</p><button className={styles.primary} onClick={() => create.mutate()}>Nueva conversación</button>{create.error && <p role="alert" className={styles.error}>{create.error.message}</p>}<Link className={styles.screenReader} to="/">Inicio</Link></main>}
   </div>
 }
 
 export function App() {
-  return <HashRouter><Routes><Route path="/" element={<Workspace />} /><Route path="/c/:id" element={<Workspace />} /></Routes></HashRouter>
+  return <HashRouter><SessionGate /></HashRouter>
 }

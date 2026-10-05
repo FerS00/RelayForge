@@ -14,6 +14,7 @@ node_modules/
 pocs/results/
 graphify-out/
 secret.key
+relayforge-fingerprint*.json
 relayforge_home/
 data/
 worktrees/
@@ -26,3 +27,5 @@ pytest-cache-files-*/
 pocs/unused.ndjson
 pocs/poc11_tailscale.ndjson
 web/dist/
+.playwright-cli/
+.pytest-pairing-review/

@@ -1,3 +1,5 @@
+> Especificación histórica. Las referencias numeradas al plan corresponden al [plan anterior archivado](../archive/PLAN_PROYECTO_2026-10-05_PREVIO.md); para alcance/estado y nuevas fases consulta el [plan vigente](../PLAN_PROYECTO.md). Este aviso no cambia sus criterios previamente aprobados.
+
 # ESPECIFICACIÓN TÉCNICA (PARA CODEX) — Fase 0A: arnés de POCs y POC-01, 02, 03, 05, 06
 
 - Plan: `docs/PLAN_PROYECTO.md`, Fase 0 (aprobada el 2026-10-02), secciones 14, 15, 16, 21, 25 y 38.
