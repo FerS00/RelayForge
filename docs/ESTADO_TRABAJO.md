@@ -5,12 +5,12 @@
 - Proyecto: RelayForge; worktree activo identificado por `git rev-parse --show-toplevel`.
 - Actualizado: 2026-10-05; sesión de origen Codex.
 - Rama de entrega: `codex/early-development-relayforge`, creada desde `4df9e651cd2b9c4f2820d7b43344fedb0c591aa6`.
-- Árbol: WIP Fases 2–10/consola y documentación local, sin stage ni commit al iniciar entrega.
+- Árbol: limpio tras publicar la entrega en la rama indicada.
 - Producto: **desarrollo temprano**.
 
 ## Objetivo activo
 
-Cerrar los dos defectos reportados en la auditoría local y publicar el conjunto revisado a una rama Git. Plan canónico en `Borrador pendiente de aprobación`; Fases 11–16 permanecen `Pendiente de aprobación`.
+Corrección local auditada y entrega Git publicada. El siguiente trabajo pendiente es la aceptación operativa de Windows Docker/móvil. Plan canónico en `Borrador pendiente de aprobación`; Fases 11–16 permanecen `Pendiente de aprobación`.
 
 ## Estado global
 
@@ -27,7 +27,7 @@ Cerrar los dos defectos reportados en la auditoría local y publicar el conjunto
 ## En curso y pendiente priorizado
 
 1. Auditoría code `e07678935a1f49acb1d867add49bf39d`: APROBADO, `gemini-3.8-flash-high`/high, 50 checks, sin denegaciones ni cambios del auditor. Una ejecución intermedia con denegación quedó invalidada y no se contó. Auditoría documental `00a3da02840a4c528cd0c7ccaef91b5e` aprobada con observaciones y correcciones finales `faf2bf7aee88437380af2afc7ca574a1` aprobadas. Enlaces y rutas personales pasan.
-2. Finalizar inventario de archivos, secret scan disponible, stage, revisión del snapshot Git y publicar rama `codex/early-development-relayforge` según autorización actual.
+2. Consultar el resultado de GitHub Actions para la rama; `gh auth status` informó que no hay sesión autenticada y esta consulta no se ejecutó.
 3. Probar build/recreate Windows, migración activa, logins Codex/Antigravity en contenedor y Job real desde móvil.
 4. Identificar repositorio/tarea/checks del otro proyecto; después recovery/backup y CI/gates de publicación.
 
@@ -73,11 +73,11 @@ Auditoría correctiva ejecutó las 41 pruebas Python por archivo; el test de fin
 
 La laptop permanece encendida como host. Funcionalidad y otro proyecto preceden diseño. Un host apagado no ejecuta tareas. Windows containers sigue siendo la opción autorizada; Docker/volúmenes/credenciales requieren verificar entorno exacto. Cuotas no expuestas permanecen desconocidas.
 
-El usuario autorizó publicar esta entrega en una rama remota; no están autorizados PR, merge, tag ni release. Las fases nuevas no se aprueban al escribirlas. No sustituir Antigravity para eludir el rechazo. Claude del host informa no autenticado; Codex redacta/reúne evidencia y Antigravity revisa con la continuidad autorizada.
+El usuario autorizó publicar esta entrega en `origin/codex/early-development-relayforge`; push completado en `ef45dd9` y `main` intacta. No se crearon PR, merge, tag ni release. Las fases nuevas no se aprueban al escribirlas. No sustituir Antigravity para eludir el rechazo. Claude del host informa no autenticado; Codex redacta/reúne evidencia y Antigravity revisa con la continuidad autorizada.
 
 ## Siguiente acción exacta
 
-Revisar el snapshot staged, crear un commit sin trailers de IA y subirlo a la rama autorizada si no aparecen secretos ni archivos ajenos. Después atender Fase 12 con login y prueba móvil real; la publicación no cierra nuevas fases automáticamente.
+Consultar la CI de la rama cuando haya una sesión GitHub autenticada. Luego atender Fase 12 con login y prueba móvil real; la publicación no cierra nuevas fases automáticamente.
 
 ## Instrucción de reanudación
 
