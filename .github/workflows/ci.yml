@@ -66,3 +66,5 @@ jobs:
         run: semgrep scan --config p/default --metrics off --error --no-git-ignore src/relayforge web/src
       - name: Personal path scan
         run: python scripts/check_personal_paths.py
+        env:
+          PYTHONPATH: src
