@@ -13,7 +13,7 @@ from typing import Any
 from urllib.parse import quote
 
 import psutil
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from relayforge.adapters.base import LaunchPlan, NormalizedEvent
@@ -114,7 +114,12 @@ class PreviewService:
                 session.add(row)
                 session.flush()
                 failure = self.gateway_error if not self.gateway_available else None
-                count = len(session.scalars(select(Preview.id).where(Preview.status.in_(_ACTIVE))).all())
+                count = (
+                    session.scalar(
+                        select(func.count()).select_from(Preview).where(Preview.status.in_(_ACTIVE))
+                    )
+                    or 0
+                )
                 if failure is None and count > self.settings.preview_max_active:
                     failure = "preview_limit_reached"
                 if failure is None and kind == "static":

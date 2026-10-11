@@ -16,17 +16,19 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from relayforge.db.session import run_migrations
 
-_COUNT_TABLES = (
-    "conversations",
-    "messages",
-    "chat_turns",
-    "chat_actions",
-    "jobs",
-    "events",
-    "attachments",
-    "previews",
-    "desktop_targets",
-)
+# Fixed, literal statements: table names never come from input.
+_COUNT_QUERIES = {
+    "conversations": 'SELECT COUNT(*) FROM "conversations"',
+    "messages": 'SELECT COUNT(*) FROM "messages"',
+    "chat_turns": 'SELECT COUNT(*) FROM "chat_turns"',
+    "chat_actions": 'SELECT COUNT(*) FROM "chat_actions"',
+    "jobs": 'SELECT COUNT(*) FROM "jobs"',
+    "events": 'SELECT COUNT(*) FROM "events"',
+    "attachments": 'SELECT COUNT(*) FROM "attachments"',
+    "previews": 'SELECT COUNT(*) FROM "previews"',
+    "desktop_targets": 'SELECT COUNT(*) FROM "desktop_targets"',
+}
+_COUNT_TABLES = tuple(_COUNT_QUERIES)
 
 
 class BackupError(ValueError):
@@ -76,9 +78,7 @@ def _database_metadata(path: Path) -> tuple[str, dict[str, int]]:
                 row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
             }
             counts = {
-                table: int(connection.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0])
-                if table in tables
-                else 0
+                table: int(connection.execute(_COUNT_QUERIES[table]).fetchone()[0]) if table in tables else 0
                 for table in _COUNT_TABLES
             }
             return str(revision_row[0]), counts
