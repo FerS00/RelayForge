@@ -10,11 +10,14 @@
 ![SQLite](https://img.shields.io/badge/SQLite-persistence-003B57?style=flat-square&logo=sqlite&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Windows%20containers-2496ED?style=flat-square&logo=docker&logoColor=white)
 ![License](https://img.shields.io/badge/license-Apache%202.0-lightgrey?style=flat-square)
-![Status](https://img.shields.io/badge/status-Early%20Development-orange?style=flat-square)
+![Status](https://img.shields.io/badge/status-Paused%20(Early%20Development)-lightgrey?style=flat-square)
 
 ### Overview
 
 RelayForge coordinates development jobs on registered local Git repositories. Claude Code prepares plans, Codex implements changes in a separate worktree, declared checks verify them, and Antigravity audits in read-only mode. The owner reviews results and explicitly approves sensitive delivery operations. SQLite preserves projects, jobs, events, diffs, findings, and decisions.
+
+> [!IMPORTANT]
+> **Paused (October 2026):** development is on hold. The latest work (conversational chat, deliverable previews, per-conversation effort and tools, Windows desktop control, and backup/restore) is complete and independently audited, but physical-device acceptance, container logins, and restart recovery on real hardware remain pending. No support or updates should be expected until the project resumes.
 
 > [!NOTE]
 > **Early Development:** The console has been exercised with synthetic agents. Acceptance with all real CLIs, the current Docker deployment, physical mobile devices, and restart recovery remains incomplete. The latest independent audit approved local Python and web quality gates. Docker runtime, real-provider jobs, physical mobile checks, and restart recovery remain unverified. See [verification status](docs/testing.md). There is no stable release or production-readiness claim.
