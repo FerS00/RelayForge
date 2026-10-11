@@ -2,22 +2,32 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class ConversationCreate(BaseModel):
-    pass
+    agent: Literal["claude", "codex"] | None = None
+    model: str | None = Field(default=None, max_length=128, pattern=r"^(?:[A-Za-z0-9][A-Za-z0-9._:/-]*)?$")
+
+
+class ConversationSettingsUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    effort: str | None = Field(default=None, max_length=16)
+    tools: dict[str, bool] | None = Field(default=None, max_length=16)
+    settings_version: int = Field(ge=0)
 
 
 class MessageCreate(BaseModel):
-    content: str = Field(min_length=1, max_length=100_000)
+    content: str = Field(default="", max_length=100_000)
+    attachment_ids: list[str] = Field(default_factory=list, max_length=8)
 
-    @field_validator("content")
-    @classmethod
-    def content_not_blank(cls, value: str) -> str:
-        if not value.strip():
+    @model_validator(mode="after")
+    def non_empty(self) -> MessageCreate:
+        if not self.content.strip() and not self.attachment_ids:
             raise ValueError("El mensaje no puede estar vacío.")
-        return value
+        if len(set(self.attachment_ids)) != len(self.attachment_ids):
+            raise ValueError("Adjuntos duplicados.")
+        return self
 
 
 class JobCreate(BaseModel):
@@ -70,3 +80,8 @@ class RepositoryCreate(BaseModel):
     path: str | None = Field(default=None, max_length=4096)
     default_branch: str | None = Field(default=None, max_length=255)
     check_commands: list[dict[str, Any]] = Field(default_factory=list, max_length=32)
+
+
+class AttachmentCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=180)
+    data_base64: str = Field(min_length=1, max_length=12 * 1024 * 1024)

@@ -4,6 +4,8 @@ import asyncio
 import json
 from collections.abc import AsyncGenerator
 
+from anyio import CancelScope
+
 from relayforge.adapters.base import NormalizedEvent
 
 
@@ -39,5 +41,7 @@ async def encode_stream(
             yield f"id: {seq}\nevent: {event_name}\ndata: {encoded}\n\n"
             pending = asyncio.create_task(iterator.__anext__())
     finally:
-        pending.cancel()
-        await iterator.aclose()
+        with CancelScope(shield=True):
+            pending.cancel()
+            await asyncio.gather(pending, return_exceptions=True)
+            await iterator.aclose()

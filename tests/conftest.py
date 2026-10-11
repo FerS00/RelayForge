@@ -25,6 +25,8 @@ class FakeAuditAdapter:
 
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 
 @pytest.fixture
@@ -58,6 +60,8 @@ def app(tmp_path: Path, fake_launcher: Path, fake_codex_launcher: Path):
         projects_root=tmp_path / "projects",
         claude_executable=str(fake_launcher),
         claude_model="",
+        chat_agent="claude",
+        chat_model="",
         codex_executable=str(fake_codex_launcher),
         allowed_tailscale_logins=("owner@example.test",),
         allowed_hosts=("relayforge.example.test",),

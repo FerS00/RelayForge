@@ -1,0 +1,66 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "response",
+    "action"
+  ],
+  "properties": {
+    "response": {
+      "type": "string"
+    },
+    "action": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "path",
+            "content",
+            "request",
+            "repository_id"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "list_directory",
+                "read_file",
+                "write_file",
+                "native_task",
+                "development_job",
+                "start_preview",
+                "stop_preview",
+                "desktop_launch",
+                "desktop_inspect",
+                "desktop_invoke",
+                "desktop_set_value",
+                "desktop_type",
+                "desktop_keys",
+                "desktop_menu",
+                "desktop_capture",
+                "desktop_close"
+              ]
+            },
+            "path": {
+              "type": "string"
+            },
+            "content": {
+              "type": "string"
+            },
+            "request": {
+              "type": "string"
+            },
+            "repository_id": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

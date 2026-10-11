@@ -18,12 +18,17 @@ afterEach(() => { cleanup(); vi.restoreAllMocks() })
 describe('NewTask', () => {
   it('dispatches the selected planning agent and model', async () => {
     vi.spyOn(api, 'repositories').mockResolvedValue([])
-    vi.spyOn(api, 'agentStatus').mockResolvedValue([])
+    vi.spyOn(api, 'agentStatus').mockResolvedValue([{
+      agent: 'codex', status: 'AVAILABLE', auth: 'AVAILABLE', version: 'fixture', models: ['fixture-model'],
+      health: null, usage: { turns: 0, steps: 0, input_tokens: null, output_tokens: null,
+        five_hour: { status: 'unknown', remaining: null }, weekly: { status: 'unknown', remaining: null } },
+    }])
     const create = vi.spyOn(api, 'createJob').mockResolvedValue({ job })
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/jobs/new']}><Routes><Route path="/jobs/new" element={<NewTask />} /><Route path="/jobs/:id" element={<p>Created</p>} /></Routes></MemoryRouter></QueryClientProvider>)
     fireEvent.change(screen.getByLabelText('Solicitud'), { target: { value: 'Plan selected model' } })
     fireEvent.change(screen.getByLabelText('Agente de planificación'), { target: { value: 'codex' } })
+    await screen.findByRole('option', { name: 'fixture-model' })
     fireEvent.change(screen.getByLabelText('Modelo de planificación'), { target: { value: 'fixture-model' } })
     fireEvent.click(screen.getByRole('button', { name: 'Crear Job de planificación' }))
     await waitFor(() => expect(create).toHaveBeenCalledWith('', 'Plan selected model', undefined, 'auto', {

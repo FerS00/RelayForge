@@ -103,6 +103,7 @@ def test_agent_status_exposes_only_safe_probes_and_measured_usage(client, app, m
     monkeypatch.setattr(
         agents, "_agent", lambda *_args: {"status": "AVAILABLE", "version": "1.2.3", "auth": "UNKNOWN"}
     )
+    monkeypatch.setattr(agents, "discover_models", lambda agent, _exe: [f"fixture-{agent}"])
     created = client.post(
         "/api/jobs",
         json={"request_text": "Plan with Codex", "agent": "codex", "model": "fixture-model"},
@@ -120,6 +121,8 @@ def test_agent_status_exposes_only_safe_probes_and_measured_usage(client, app, m
     assert rows["codex"]["usage"]["five_hour"] == {"status": "unknown", "remaining": None}
     assert rows["codex"]["usage"]["weekly"]["status"] == "unknown"
     assert rows["antigravity"]["auth"] == "UNKNOWN"
+    assert rows["codex"]["models"] == ["fixture-codex"]
+    assert "model_catalog" not in rows["codex"]
     assert rows["claude"]["usage"]["input_tokens"] is None
 
 

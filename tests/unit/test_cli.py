@@ -112,3 +112,79 @@ def test_cli_returns_zero_after_shutdown_signal(monkeypatch, tmp_path, signal_na
 
     monkeypatch.setattr(cli._RelayForgeServer, "run", stop_on_signal)
     assert main(["serve"]) == 0
+
+
+def test_cli_requires_only_default_chat_provider_and_preserves_settings(monkeypatch, tmp_path) -> None:
+    repository = tmp_path / "repo"
+    distribution = repository / "web" / "dist"
+    distribution.mkdir(parents=True)
+    (distribution / "index.html").write_text("<html></html>", encoding="utf-8")
+    settings = Settings(
+        workspace_dir=tmp_path,
+        projects_root=tmp_path,
+        home=tmp_path / "home",
+        port=0,
+        claude_executable="absent-claude",
+        codex_executable="codex",
+        chat_model="custom",
+        agent_models={"codex": ("custom",)},
+    )
+    monkeypatch.setattr(cli, "__file__", str(repository / "src/relayforge/cli.py"))
+    monkeypatch.setattr(cli, "load_settings", lambda **_: settings)
+    monkeypatch.setattr(cli.shutil, "which", lambda name: "codex.exe" if name == "codex" else None)
+    observed = []
+    monkeypatch.setattr(cli, "create_app", lambda effective, **_: observed.append(effective))
+    monkeypatch.setattr(cli._RelayForgeServer, "run", lambda *args, **kwargs: None)
+    assert main(["serve"]) == 0
+    assert observed[0].codex_executable == "codex.exe"
+    assert observed[0].agent_models == {"codex": ("custom",)}
+    assert observed[0].chat_model == "custom"
+
+
+def test_cli_backup_uses_settings_home_and_prints_json(monkeypatch, capsys, tmp_path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    settings = Settings(
+        workspace_dir=workspace,
+        port=8787,
+        home=tmp_path / "home",
+        projects_root=tmp_path / "projects",
+        claude_executable="claude",
+    )
+    backup_path = tmp_path / "backups" / "relayforge-backup-test"
+    backup_path.mkdir(parents=True)
+    counts = {"conversations": 3}
+    (backup_path / "manifest.json").write_text(json.dumps({"counts": counts}), encoding="utf-8")
+    monkeypatch.setattr(cli, "load_settings", lambda **_: settings)
+    monkeypatch.setattr(cli, "create_backup", lambda home, output: backup_path)
+
+    assert main(["backup", "--output", str(tmp_path / "backups")]) == 0
+    assert json.loads(capsys.readouterr().out) == {"backup": str(backup_path), "counts": counts}
+
+
+def test_cli_restore_uses_explicit_home_without_loading_settings(monkeypatch, capsys, tmp_path) -> None:
+    result = {"schema_revision": "0014_desktop_targets", "counts": {"messages": 2}}
+    monkeypatch.setattr(cli, "load_settings", lambda **_: pytest.fail("settings should not be loaded"))
+    monkeypatch.setattr(cli, "restore_backup", lambda backup, home: result)
+
+    assert main(["restore", "--from", str(tmp_path / "backup"), "--home", str(tmp_path / "new-home")]) == 0
+    assert json.loads(capsys.readouterr().out) == result
+
+
+def test_cli_backup_error_returns_json_and_exit_code_two(monkeypatch, capsys, tmp_path) -> None:
+    from relayforge.ops.backup import BackupError
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    settings = Settings(
+        workspace_dir=workspace,
+        port=8787,
+        home=tmp_path / "home",
+        projects_root=tmp_path / "projects",
+        claude_executable="claude",
+    )
+    monkeypatch.setattr(cli, "load_settings", lambda **_: settings)
+    monkeypatch.setattr(cli, "create_backup", lambda *_: (_ for _ in ()).throw(BackupError("bad_backup")))
+
+    assert main(["backup"]) == 2
+    assert json.loads(capsys.readouterr().err) == {"error": "bad_backup"}

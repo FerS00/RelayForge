@@ -95,7 +95,7 @@ def test_uvicorn_stream_delivers_saved_events(app, client, monkeypatch):
                     blocks.append(json.loads(line[6:]))
                 if any(event["type"] == "step.finished" for event in blocks):
                     break
-            assert [event["type"] for event in blocks][0] == "step.started"
+            assert [event["type"] for event in blocks][:2] == ["step.queued", "step.started"]
             assert blocks[-1]["type"] == "step.finished"
             assert all(event["seq"] > 0 for event in blocks)
             deltas = [event for event in blocks if event["type"] == "agent.message.delta"]
@@ -201,7 +201,7 @@ def test_stream_subscribes_before_returning_headers(app, client):
                             received.append(json.loads(line[6:]))
                         if any(event["type"] == "step.finished" for event in received):
                             break
-                    assert received[0]["type"] == "step.started"
+                    assert [event["type"] for event in received][:2] == ["step.queued", "step.started"]
                     assert received[0]["seq"] == 1
                     assert received[-1]["type"] == "step.finished"
                     return

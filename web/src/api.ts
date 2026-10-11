@@ -1,4 +1,14 @@
-export type Conversation = { id: string; title: string; created_at?: string; updated_at: string }
+export type ChatAction = { id: string; turn_id: string; kind: string; payload: Record<string, string>; operation_hash: string; status: string; version: number; result: Record<string, unknown> | null }
+export type PreviewItem = { id: string; status: string; kind: 'static' | 'command'; root: string; path: string; port: number | null; error_code: string | null; created_at: string; log_tail: string[] }
+export type PreviewList = { items: PreviewItem[]; available: boolean; error_code: string | null }
+export type DeliverableRoot = { id: string; name: string }
+export type DeliverableEntry = { name: string; directory: boolean; size_bytes: number; modified_at: string }
+export type DeliverableListing = { root: string; path: string; entries: DeliverableEntry[]; truncated: boolean }
+export type Attachment = { id: string; name: string; media_type: string; size_bytes: number; sha256: string; state: string; message_id?: string | null }
+export type ChatDefaults = { agent: 'claude' | 'codex'; model: string; runtime: string }
+export type ToolKey = 'write_files' | 'commands' | 'git_local' | 'preview' | 'desktop' | 'web_search' | 'remote_delivery'
+export type Conversation = { id: string; title: string; created_at?: string; updated_at: string; agent?: string; model?: string; runtime?: string; capabilities?: string[]; effort?: string; effective_effort?: string; tools?: Record<ToolKey, boolean>; settings_version?: number; supported_efforts?: string[] }
+export type ChatTurn = { id: string; status: string; version: number; agent?: string; model?: string; effort?: string }
 export type Message = {
   id: string
   step_id: string
@@ -6,6 +16,7 @@ export type Message = {
   content: string
   status: 'complete' | 'error'
   ts: string
+  attachments?: Attachment[]
 }
 export type ConversationEvent = {
   conversation: string
@@ -60,6 +71,7 @@ export type Job = {
   audit_model?: string | null
   paused_stage?: string | null
   approval_kind?: string | null
+  review_only?: boolean
   require_plan_approval?: boolean
   worktree_path?: string | null
   status: string
@@ -100,6 +112,7 @@ export type CheckCommand = { name: string; argv: string[]; timeout_seconds?: num
 export type Agent = 'claude' | 'codex' | 'antigravity'
 export type AgentStatus = {
   agent: Agent; status: string; auth: string; version: string; models: string[]
+  efforts?: Record<string, string[]>; default_efforts?: string[]
   health: { status: string; detail: string | null; rate_limited_until: string | null } | null
   usage: { turns: number; steps: number; input_tokens: number | null; output_tokens: number | null;
     five_hour: { status: string; remaining: number | null }; weekly: { status: string; remaining: number | null } }
@@ -164,13 +177,36 @@ export const api = {
     return request<MetricsSummary>(`/api/metrics/summary${params.size ? `?${params}` : ''}`)
   },
   conversations: () => request<Conversation[]>('/api/conversations'),
-  createConversation: () => request<Conversation>('/api/conversations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }),
-  messages: (id: string) => request<{ messages: Message[]; active_step: { step_id: string } | null }>(`/api/conversations/${encodeURIComponent(id)}/messages`),
-  send: (id: string, content: string) => request<{ message: Message }>(`/api/conversations/${encodeURIComponent(id)}/messages`, {
+  chatDefaults: () => request<ChatDefaults>('/api/conversations/defaults'),
+  createConversation: (selection?: { agent?: 'claude' | 'codex'; model?: string }) => request<Conversation>('/api/conversations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(selection ?? {}) }),
+  decideAction: (conversation: string, action: ChatAction, decision: 'approve' | 'reject', key: string) => request<ChatAction>(`/api/conversations/${encodeURIComponent(conversation)}/actions/${encodeURIComponent(action.id)}/decision`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify({ version: action.version, operation_hash: action.operation_hash, decision }) }),
+  updateConversationSettings: (conversation: string, body: { effort?: string; tools?: Partial<Record<ToolKey, boolean>>; settings_version: number }) => request<Conversation>(`/api/conversations/${encodeURIComponent(conversation)}/settings`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+  previews: (conversation: string) => request<PreviewList>(`/api/conversations/${encodeURIComponent(conversation)}/previews`),
+  previewTicket: (id: string) => request<{ url: string; expires_in: number }>(`/api/previews/${encodeURIComponent(id)}/ticket`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }),
+  stopPreview: (id: string) => request<{ id: string; status: string }>(`/api/previews/${encodeURIComponent(id)}/stop`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }),
+  fileRoots: (conversation: string) => request<{ roots: DeliverableRoot[] }>(`/api/conversations/${encodeURIComponent(conversation)}/files/roots`),
+  files: (conversation: string, root: string, path: string) => {
+    const params = new URLSearchParams({ root, path })
+    return request<DeliverableListing>(`/api/conversations/${encodeURIComponent(conversation)}/files?${params}`)
+  },
+  fileContentUrl: (conversation: string, root: string, path: string) => {
+    const params = new URLSearchParams({ root, path })
+    return `/api/conversations/${encodeURIComponent(conversation)}/files/content?${params}`
+  },
+  fileZipUrl: (conversation: string, root: string, path: string) => {
+    const params = new URLSearchParams({ root, path })
+    return `/api/conversations/${encodeURIComponent(conversation)}/files/zip?${params}`
+  },
+  messages: (id: string) => request<{ conversation?: Conversation; messages: Message[]; actions?: ChatAction[]; jobs?: Job[]; turns?: ChatTurn[]; active_step: { step_id: string } | null }>(`/api/conversations/${encodeURIComponent(id)}/messages`),
+  send: (id: string, content: string, attachment_ids: string[] = [], key: string = crypto.randomUUID()) => request<{ message: Message }>(`/api/conversations/${encodeURIComponent(id)}/messages`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
-    body: JSON.stringify({ content }),
+    headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key },
+    body: JSON.stringify({ content, attachment_ids }),
   }),
+  uploadAttachment: (id: string, name: string, data_base64: string) => request<Attachment>(`/api/conversations/${encodeURIComponent(id)}/attachments`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, data_base64 }),
+  }),
+  attachmentUrl: (id: string, attachment: string) => `/api/conversations/${encodeURIComponent(id)}/attachments/${encodeURIComponent(attachment)}/content`,
   jobs: (repository_id?: string) => request<Job[]>(`/api/jobs${repository_id ? `?repository_id=${encodeURIComponent(repository_id)}` : ''}`),
   job: (id: string) => request<Job>(`/api/jobs/${encodeURIComponent(id)}`),
   createJob: (title: string, request_text: string, repository_id?: string, workflow = 'auto', selection?: { agent: Agent; model?: string; implementation_model?: string; audit_model?: string; require_plan_approval?: boolean }) => request<{ job: Job }>('/api/jobs', {

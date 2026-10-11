@@ -128,3 +128,56 @@ def test_settings_reject_container_proxy_unless_exact_ipv4_unicast(
             container_mode=True,
             trusted_proxy_ip=proxy_ip,
         )
+
+
+def test_chat_settings_environment_and_catalog_are_loaded(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("RELAYFORGE_CHAT_AGENT", "codex")
+    monkeypatch.setenv("RELAYFORGE_CHAT_MODEL", "gpt-6-luna")
+    monkeypatch.setenv("RELAYFORGE_CHAT_EFFORT", "high")
+    monkeypatch.setenv("RELAYFORGE_AGENT_MODELS", '{"codex":["gpt-6-luna"]}')
+    settings = load_settings(workspace_dir=tmp_path)
+    assert settings.chat_effort == "high" and settings.chat_model == "gpt-6-luna"
+    assert settings.agent_models == {"codex": ("gpt-6-luna",)}
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        load_settings(workspace_dir=tmp_path, chat_agent="unknown")
+
+
+def test_preview_settings_parse_environment_and_public_origin(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("RELAYFORGE_PREVIEW_GATEWAY_PORT", "8794")
+    monkeypatch.setenv("RELAYFORGE_PREVIEW_PUBLIC_ORIGIN", "https://RelayForge.Example.Test:8443")
+    monkeypatch.setenv("RELAYFORGE_PREVIEW_PORT_RANGE", "8901-8908")
+    monkeypatch.setenv("RELAYFORGE_PREVIEW_IDLE_SECONDS", "3600")
+    monkeypatch.setenv("RELAYFORGE_PREVIEW_MAX_ACTIVE", "4")
+    monkeypatch.setenv("RELAYFORGE_ALLOWED_HOSTS", "relayforge.example.test")
+
+    settings = load_settings(workspace_dir=tmp_path)
+
+    assert settings.preview_gateway_port == 8794
+    assert settings.preview_public_origin == "https://relayforge.example.test:8443"
+    assert settings.preview_port_range == (8901, 8908)
+    assert settings.preview_idle_seconds == 3600
+    assert settings.preview_max_active == 4
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"preview_gateway_port": 8787},
+        {"preview_port_range": "8793-8900"},
+        {"preview_port_range": "9000-8999"},
+        {"preview_idle_seconds": 59},
+        {"preview_max_active": 11},
+        {"preview_public_origin": "https://outside.example.test:8443"},
+        {"preview_public_origin": "http://localhost:8787"},
+        {"preview_public_origin": "http://localhost:8793/path"},
+        {"preview_public_origin": "http://localhost:8793?x=1"},
+    ],
+)
+def test_preview_settings_reject_invalid_values(tmp_path: Path, monkeypatch, overrides) -> None:
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    with pytest.raises(ValueError):
+        load_settings(workspace_dir=tmp_path, **overrides)

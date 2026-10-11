@@ -51,4 +51,5 @@ async def decide_approval(
         None,
         {"approval_id": approval_id, "decision": body.decision, "scope": body.scope},
     )
+    request.app.state.chat.job_finished(str(result["job_id"]))
     return cast(dict[str, object], result)

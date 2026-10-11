@@ -18,14 +18,16 @@ class AntigravityAdapter:
     def __init__(
         self,
         executable: str = "agy",
-        model: str = "gemini-3.8-flash",
+        model: str = "gemini-3.8-flash-medium",
         effort: str = "medium",
         timeout_seconds: int = 1800,
+        runner: Path | None = None,
     ) -> None:
         self.executable = executable
         self.model = model
         self.effort = effort
         self.timeout_seconds = timeout_seconds
+        self.runner = runner
 
     @staticmethod
     def _hashes(worktree: Path, paths: list[str]) -> dict[str, str | None]:
@@ -135,10 +137,43 @@ class AntigravityAdapter:
     ) -> AuditResult:
         root = worktree.resolve(strict=True)
         before = self._hashes(root, changed_paths)
+        if self.runner is not None:
+            from relayforge.adapters.antigravity.delegated import run_delegated
+
+            try:
+                value = run_delegated(
+                    self.runner,
+                    root,
+                    changed_paths,
+                    commands,
+                    self.model,
+                    self.effort,
+                    self.timeout_seconds,
+                    diff_text,
+                    iteration,
+                    profile,
+                )
+                verdict, summary, findings = self._validate(value)
+                for finding in findings:
+                    candidate = Path(finding.file)
+                    if candidate.is_absolute() or candidate.as_posix() not in {
+                        Path(p).as_posix() for p in changed_paths
+                    }:
+                        raise ValueError("audit_finding_path_invalid")
+            except (OSError, ValueError, TypeError, KeyError, subprocess.TimeoutExpired) as exc:
+                verdict, summary, findings = (
+                    "BLOCKED",
+                    f"Auditoría delegada bloqueada: {type(exc).__name__}.",
+                    (),
+                )
+            after = self._hashes(root, changed_paths)
+            if before != after:
+                verdict, summary = "BLOCKED", "Cambió un hash de archivo durante la auditoría."
+            return AuditResult(cast(Any, verdict), summary, findings, before, after)
         binary = shutil.which(self.executable)
         if binary is None:
             return AuditResult("BLOCKED", "No se encontró Antigravity CLI.", (), before, before.copy())
-        with tempfile.TemporaryDirectory(prefix="relayforge-audit-") as raw_dir:
+        with tempfile.TemporaryDirectory(prefix="relayforge-audit-", ignore_cleanup_errors=True) as raw_dir:
             run_dir = Path(raw_dir)
             diff_path = run_dir / "changes.diff"
             diff_path.write_text(diff_text[:1_000_000], encoding="utf-8")
@@ -159,11 +194,13 @@ class AntigravityAdapter:
                 ): name
                 for name in command_map
             }
+            check_results = run_dir / "checks.ndjson"
             policy = {
                 "worktree": str(root),
                 "files": [str((root / item).resolve()) for item in changed_paths] + [str(diff_path)],
                 "commands": command_map,
                 "dispatch_commands": dispatch_commands,
+                "check_results": str(check_results),
             }
             policy_path = run_dir / "policy.json"
             policy_path.write_text(json.dumps(policy, ensure_ascii=False), encoding="utf-8")
@@ -189,7 +226,11 @@ class AntigravityAdapter:
                 "Devuelve el JSON exigido por el esquema, sin texto adicional.\n"
                 f"Iteración: {iteration}\nArchivos: {json.dumps(changed_paths, ensure_ascii=False)}\n"
                 f"Diff: {diff_path}\n"
-                f"Checks disponibles: {json.dumps(list(command_map), ensure_ascii=False)}"
+                f"Checks disponibles: {json.dumps(list(command_map), ensure_ascii=False)}\n"
+                "Para cada check usa run_command exclusivamente con una cadena de dispatch_commands, "
+                "Cwd exacto worktree, RunPersistent=false y WaitMsBeforeAsync=30000. "
+                "No ejecutes comandos originales ni construyas otro shell. Si falta un check, no apruebes.\n"
+                f"Política: {json.dumps(policy, ensure_ascii=False)}"
             )
             if profile == "security":
                 prompt += (
@@ -231,18 +272,38 @@ class AntigravityAdapter:
                     raise ValueError("antigravity_exit_failed")
                 stdout = result.stdout.decode("utf-8", "replace")
                 final: Any = None
+                final_status: str | None = None
+                native_denied = False
                 for line in stdout.splitlines():
                     try:
                         event = json.loads(line)
                     except ValueError:
                         continue
                     data = event.get("result") if isinstance(event, dict) else None
+                    if isinstance(data, dict):
+                        native_denied = native_denied or bool(data.get("denied_actions"))
+                        final_status = data.get("status")
                     response = data.get("response") if isinstance(data, dict) else None
                     if response is not None:
                         final = response
+                if native_denied:
+                    raise ValueError("audit_native_permission_denied")
+                if final_status != "SUCCESS":
+                    raise ValueError("audit_provider_not_successful")
+                if not final:
+                    raise ValueError("audit_empty_response")
                 if isinstance(final, str):
                     final = json.loads(final)
                 verdict, summary, findings = self._validate(final)
+                completed: dict[str, Any] = {}
+                if check_results.exists():
+                    for line in check_results.read_text(encoding="utf-8").splitlines():
+                        record = json.loads(line)
+                        completed[record["name"]] = record
+                if set(command_map) - set(completed):
+                    raise ValueError("audit_checks_missing")
+                if any(completed[name].get("exit_code") != 0 for name in command_map):
+                    raise ValueError("audit_checks_failed")
                 allowed_paths = {Path(item).as_posix() for item in changed_paths}
                 for finding in findings:
                     candidate = Path(finding.file)
@@ -253,10 +314,18 @@ class AntigravityAdapter:
                         or candidate.as_posix() not in allowed_paths
                     ):
                         raise ValueError("audit_finding_path_invalid")
-            except (OSError, subprocess.TimeoutExpired, ValueError, TypeError):
+            except (OSError, subprocess.TimeoutExpired, ValueError, TypeError) as exc:
                 verdict, summary, findings = (
                     "BLOCKED",
-                    "La auditoría falló o devolvió una salida inválida.",
+                    {
+                        "audit_native_permission_denied": (
+                            "Antigravity denegó un permiso nativo; no se amplían permisos."
+                        ),
+                        "audit_provider_not_successful": "Antigravity no completó la sesión con SUCCESS.",
+                        "audit_empty_response": "Antigravity no devolvió un dictamen.",
+                        "audit_checks_missing": "La auditoría omitió checks obligatorios.",
+                        "audit_checks_failed": "Un check de auditoría falló.",
+                    }.get(str(exc), "La auditoría falló o devolvió una salida inválida."),
                     (),
                 )
             gate_log = run_dir / "gate.ndjson"

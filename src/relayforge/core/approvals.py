@@ -5,9 +5,10 @@ import hashlib
 import json
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
+from relayforge.core.event_sequence import next_seq
 from relayforge.core.ids import new_ulid
 from relayforge.core.states import JobStatus, validate_transition
 from relayforge.db.models import Approval, ApprovalGrant, Event, Job, utc_now
@@ -209,10 +210,7 @@ class ApprovalService:
 
     @staticmethod
     def _state_event(session: Session, job: Job, old: str, new: str, now: str) -> None:
-        seq = (
-            session.scalar(select(func.max(Event.seq)).where(Event.conversation_id == job.conversation_id))
-            or 0
-        ) + 1
+        seq = next_seq(session, job.conversation_id)
         session.add(
             Event(
                 conversation_id=job.conversation_id,

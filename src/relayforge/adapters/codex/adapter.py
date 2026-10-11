@@ -12,10 +12,14 @@ from relayforge.adapters.base import LaunchPlan, NormalizedEvent, ParseState, Ru
 class CodexRunSpec:
     cwd: Path
     prompt: str
-    schema_path: Path
+    schema_path: Path | None
     resume_thread_id: str | None = None
     model: str = ""
     sandbox: str = "workspace-write"
+    reasoning_effort: str = ""
+    skip_git_repo_check: bool = False
+    image_paths: tuple[Path, ...] = ()
+    web_search: bool = False
 
 
 @dataclass(frozen=True)
@@ -31,9 +35,12 @@ class CodexAdapter:
                 for char in thread_id
             ):
                 raise ValueError("El thread_id de Codex no es válido.")
-            argv = [self.executable, "exec", "resume", thread_id, "--json", "-C", str(spec.cwd)]
+            argv = [self.executable, "-C", str(spec.cwd), "exec", "resume", thread_id, "--json"]
         else:
             argv = [self.executable, "exec", "--json", "-C", str(spec.cwd)]
+        if spec.web_search:
+            # --search is a global option and must precede the exec subcommand.
+            argv.insert(1, "--search")
         if spec.sandbox not in {"read-only", "workspace-write"}:
             raise ValueError("Sandbox no permitido.")
         if spec.model:
@@ -41,15 +48,18 @@ class CodexAdapter:
         argv.extend(
             ["-c", f"sandbox_mode='{spec.sandbox}'"] if spec.resume_thread_id else ["-s", spec.sandbox]
         )
-        argv.extend(
-            [
-                "-c",
-                "windows.sandbox='unelevated'",
-                "--output-schema",
-                str(spec.schema_path),
-                "-",
-            ]
-        )
+        if spec.reasoning_effort:
+            if spec.reasoning_effort not in {"low", "medium", "high", "xhigh", "max"}:
+                raise ValueError("Esfuerzo no permitido.")
+            argv.extend(["-c", f"model_reasoning_effort='{spec.reasoning_effort}'"])
+        argv.extend(["-c", "windows.sandbox='unelevated'"])
+        if spec.schema_path is not None:
+            argv.extend(["--output-schema", str(spec.schema_path)])
+        if spec.skip_git_repo_check:
+            argv.append("--skip-git-repo-check")
+        for path in spec.image_paths:
+            argv.extend(["--image", str(path)])
+        argv.append("-")
         return LaunchPlan(tuple(argv), Path(spec.cwd), spec.prompt)
 
     @staticmethod

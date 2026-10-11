@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
@@ -18,10 +19,11 @@ from relayforge.adapters.base import (
     PlanResult,
     TriageResult,
 )
+from relayforge.core.event_sequence import next_seq as _next_seq
 from relayforge.core.events import EventBus
 from relayforge.core.ids import new_ulid
 from relayforge.core.states import ACTIVE_STATES, JobStatus, validate_transition
-from relayforge.db.models import Conversation, Event, Finding, Job, JobStep, Repository, utc_now
+from relayforge.db.models import Conversation, Event, Finding, Job, JobStep, Message, Repository, utc_now
 from relayforge.security.redact import redact_text
 
 
@@ -31,12 +33,6 @@ class JobNotFound(LookupError):
 
 class VersionConflict(RuntimeError):
     pass
-
-
-def _next_seq(session: Session, conversation_id: str) -> int:
-    return (
-        session.scalar(select(func.max(Event.seq)).where(Event.conversation_id == conversation_id)) or 0
-    ) + 1
 
 
 class JobService:
@@ -53,6 +49,7 @@ class JobService:
         self.orchestrator = orchestrator
         self.workspace_dir = workspace_dir
         self.output_root = output_root
+        self.on_terminal: Callable[[str], None] | None = None
         self.planners: dict[str, PlannerAdapter] = {"claude": orchestrator}
 
     def planner_for(self, job: dict[str, Any]) -> PlannerAdapter:
@@ -155,12 +152,8 @@ class JobService:
             if stage in {"plan", "triage"}:
                 row.planning_agent, row.planning_model = selected, model
                 if selected != old_agent:
-                    conversation = session.get(Conversation, row.conversation_id)
-                    if conversation is not None:
-                        conversation.session_id = new_ulid()
-                        conversation.session_established = 0
-                        conversation.orchestrator = selected
-                        row.orchestrator_session_id = conversation.session_id
+                    row.orchestrator_session_id = new_ulid()
+                    row.planner_session_established = 0
             elif stage == "implement":
                 row.implementation_model = model
             else:
@@ -210,10 +203,16 @@ class JobService:
         implementation_model: str | None = None,
         audit_model: str | None = None,
         require_plan_approval: bool = False,
+        review_only: bool = False,
+        conversation_id: str | None = None,
+        origin_message_id: str | None = None,
+        origin_turn_id: str | None = None,
     ) -> tuple[dict[str, Any], bool]:
         request_text = redact_text(request_text)
         title = redact_text(title) if title else None
-        now, job_id, conversation_id = utc_now(), new_ulid(), new_ulid()
+        now, job_id = utc_now(), new_ulid()
+        linked_conversation = conversation_id
+        conversation_id = conversation_id or new_ulid()
         with self.sessions.begin() as session:
             existing = session.scalar(select(Job).where(Job.idempotency_key == idempotency_key))
             if existing is not None:
@@ -221,23 +220,36 @@ class JobService:
             repository = session.get(Repository, repository_id) if repository_id else None
             if repository_id and (repository is None or not repository.enabled):
                 raise ValueError("El repositorio no existe o está deshabilitado.")
-            conversation = Conversation(
-                id=conversation_id,
-                title=title or " ".join(request_text.split())[:60] or "Nueva tarea",
-                workspace_dir=repository.path if repository else str(self.workspace_dir),
-                orchestrator=planning_agent,
-                session_id=new_ulid(),
-                session_established=0,
-                created_at=now,
-                updated_at=now,
-            )
-            session.add(conversation)
-            session.flush()
+            if linked_conversation:
+                conversation = session.get(Conversation, linked_conversation)
+                if conversation is None:
+                    raise ValueError("conversation_not_found")
+                if origin_message_id:
+                    origin = session.get(Message, origin_message_id)
+                    if (
+                        origin is None
+                        or origin.conversation_id != linked_conversation
+                        or origin.step_id != origin_turn_id
+                    ):
+                        raise ValueError("job_origin_invalid")
+            else:
+                conversation = Conversation(
+                    id=conversation_id,
+                    title=title or " ".join(request_text.split())[:60] or "Nueva tarea",
+                    workspace_dir=repository.path if repository else str(self.workspace_dir),
+                    orchestrator=planning_agent,
+                    session_id=new_ulid(),
+                    session_established=0,
+                    created_at=now,
+                    updated_at=now,
+                )
+                session.add(conversation)
+                session.flush()
             next_number = (session.scalar(select(func.max(Job.number))) or 0) + 1
             job = Job(
                 id=job_id,
                 number=next_number,
-                title=conversation.title,
+                title=title or " ".join(request_text.split())[:60] or "Nueva tarea",
                 request_text=request_text,
                 workflow=workflow if repository_id else "plan",
                 planning_agent=planning_agent,
@@ -245,12 +257,15 @@ class JobService:
                 implementation_model=implementation_model,
                 audit_model=audit_model,
                 require_plan_approval=int(require_plan_approval),
+                review_only=int(review_only),
                 status=JobStatus.QUEUED.value,
                 conversation_id=conversation_id,
                 repository_id=repository.id if repository else None,
                 iteration=1,
                 max_iterations=3,
-                orchestrator_session_id=conversation.session_id,
+                orchestrator_session_id=new_ulid(),
+                origin_message_id=origin_message_id,
+                origin_turn_id=origin_turn_id,
                 created_at=now,
                 updated_at=now,
                 version=0,
@@ -270,7 +285,7 @@ class JobService:
             session.flush()
             event = Event(
                 conversation_id=conversation_id,
-                seq=1,
+                seq=_next_seq(session, conversation_id),
                 ts=now,
                 type="job.state_changed",
                 actor="core",
@@ -288,7 +303,7 @@ class JobService:
                 "job.state_changed",
                 "core",
                 None,
-                {"from": None, "to": JobStatus.QUEUED.value, "_seq": 1},
+                {"from": None, "to": JobStatus.QUEUED.value, "_seq": event.seq},
                 now,
             ),
         )
@@ -381,6 +396,7 @@ class JobService:
                 "worktree_path": job.worktree_path,
                 "diff": job.diff_text or "",
                 "paths": json.loads(job.diff_paths_json or "[]"),
+                "review_only": bool(job.review_only),
                 "status": job.status,
             }
 
@@ -407,8 +423,8 @@ class JobService:
             session.flush()
             context = ConversationContext(
                 conversation.id,
-                conversation.session_id,
-                bool(conversation.session_established),
+                job.orchestrator_session_id or job.id,
+                bool(job.planner_session_established),
                 Path(job.worktree_path),
                 step.id,
             )
@@ -444,8 +460,8 @@ class JobService:
             session.flush()
             return ConversationContext(
                 conversation.id,
-                conversation.session_id,
-                bool(conversation.session_established),
+                job.orchestrator_session_id or job.id,
+                bool(job.planner_session_established),
                 Path(job.worktree_path),
                 step.id,
                 job.planning_model or "",
@@ -648,12 +664,15 @@ class JobService:
             step = session.scalar(select(JobStep).where(JobStep.job_id == job_id, JobStep.kind == "plan"))
             if conversation is None or step is None:
                 raise RuntimeError("job_relations_missing")
+            repository = session.get(Repository, job.repository_id) if job.repository_id else None
             return (
                 ConversationContext(
                     conversation_id=conversation.id,
-                    session_id=conversation.session_id,
-                    session_established=bool(conversation.session_established),
-                    cwd=Path(job.worktree_path or conversation.workspace_dir),
+                    session_id=job.orchestrator_session_id or job.id,
+                    session_established=bool(job.planner_session_established),
+                    cwd=Path(
+                        job.worktree_path or (repository.path if repository else conversation.workspace_dir)
+                    ),
                     step_id=step.id,
                     model=job.planning_model or "",
                 ),
@@ -717,6 +736,8 @@ class JobService:
             conversation_id,
             NormalizedEvent("job.state_changed", "core", None, {**payload, "_seq": seq}, now),
         )
+        if self.on_terminal and target in {JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED}:
+            self.on_terminal(job_id)
         return serialized
 
     def set_step(
@@ -888,6 +909,8 @@ class JobService:
             job = session.get(Job, job_id)
             if job is None:
                 raise JobNotFound(job_id)
+            if job is not None and job.planning_agent == "claude":
+                job.planner_session_established = 1
             step = session.scalar(select(JobStep).where(JobStep.job_id == job_id, JobStep.kind == "plan"))
             if step is None:
                 raise RuntimeError("plan_step_missing")
@@ -1198,8 +1221,11 @@ class JobService:
             "audit_model": job.audit_model,
             "paused_stage": job.paused_stage,
             "require_plan_approval": bool(job.require_plan_approval),
+            "review_only": bool(job.review_only),
             "status": job.status,
             "conversation_id": job.conversation_id,
+            "origin_message_id": job.origin_message_id,
+            "origin_turn_id": job.origin_turn_id,
             "repository_id": job.repository_id,
             "base_sha": job.base_sha,
             "branch": job.branch,

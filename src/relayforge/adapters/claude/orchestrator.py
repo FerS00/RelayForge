@@ -190,7 +190,15 @@ class ClaudeOrchestrator:
 
     async def chat(self, ctx: ConversationContext, message: str) -> AsyncIterator[NormalizedEvent]:
         step_id = ctx.step_id
-        spec = RunSpec(ctx.session_id, ctx.session_established, ctx.cwd, message)
+        spec = RunSpec(
+            ctx.session_id,
+            ctx.session_established,
+            ctx.cwd,
+            message,
+            model=ctx.model,
+            effort=ctx.effort,
+            web_search=ctx.web_search,
+        )
         plan = self.adapter.build_run(spec)
         folder = self.output_root / "conversations" / ctx.conversation_id / "steps" / step_id
         folder.mkdir(parents=True, exist_ok=True)

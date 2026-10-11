@@ -15,6 +15,68 @@ def main() -> int:
         return 2
     prompt = sys.stdin.read()
     schema = Path(args[args.index("--output-schema") + 1]) if "--output-schema" in args else None
+    if schema is None and "Realiza únicamente esta solicitud" in prompt:
+        if "-s" not in args or args[args.index("-s") + 1] != "workspace-write":
+            return 4
+        (cwd / "fake-native.txt").write_text("native fixture", encoding="utf-8")
+        print(
+            json.dumps(
+                {"type": "item.completed", "item": {"type": "agent_message", "text": "Archivo local creado"}}
+            ),
+            flush=True,
+        )
+        print(json.dumps({"type": "turn.completed"}), flush=True)
+        return 0
+    if schema is None or schema.name == "chat.schema.json":
+        if os.getenv("FAKE_CODEX_CHAT_SCENARIO") == "stall":
+            time.sleep(30)
+        if os.getenv("FAKE_CODEX_CHAT_SCENARIO") == "auth":
+            print(
+                json.dumps({"type": "turn.failed", "error": {"message": "authentication required"}}),
+                flush=True,
+            )
+            return 1
+        resumed = "resume" in args
+        if resumed:
+            if args[args.index("resume") + 1] != "fake-chat-thread" or "sandbox_mode='read-only'" not in args:
+                return 5
+        elif "-s" not in args or args[args.index("-s") + 1] != "read-only":
+            return 4
+        print(json.dumps({"type": "fixture.invocation", "argv": args}), flush=True)
+        if "--image" in args and not Path(args[args.index("--image") + 1]).is_file():
+            return 6
+        print(json.dumps({"type": "thread.started", "thread_id": "fake-chat-thread"}), flush=True)
+        print(
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {
+                        "type": "agent_message",
+                        "text": json.dumps(
+                            {
+                                "response": "Evidencia recibida"
+                                if "EVIDENCIA ADJUNTA" in prompt
+                                else "Contexto conservado"
+                                if resumed
+                                else "Hola desde Codex",
+                                "action": None,
+                            }
+                        )
+                        if schema
+                        else (
+                            "Evidencia recibida"
+                            if "EVIDENCIA ADJUNTA" in prompt
+                            else "Contexto conservado"
+                            if resumed
+                            else "Hola desde Codex"
+                        ),
+                    },
+                }
+            ),
+            flush=True,
+        )
+        print(json.dumps({"type": "turn.completed"}), flush=True)
+        return 0
     if schema and schema.name in {"plan.schema.json", "triage.schema.json"}:
         if "-s" not in args or args[args.index("-s") + 1] != "read-only":
             return 4

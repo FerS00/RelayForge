@@ -10,7 +10,7 @@ from typing import Any
 
 from relayforge.adapters.base import LaunchPlan
 
-_ALLOWED_ENV = ("PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "COMSPEC")
+_ALLOWED_ENV = ("PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "COMSPEC", "USERPROFILE")
 _SHELLS = {
     "cmd",
     "cmd.exe",

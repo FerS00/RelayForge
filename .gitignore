@@ -40,3 +40,8 @@ docs/GUIA_LAPTOP_*.md
 docs/specs/
 docs/archive/
 docs/evidence/
+
+# Operator-local launchers and internal phase specs
+scripts/*.local.ps1
+docs/ESPECIFICACION_*.md
+docs/ACEPTACION_*.md

@@ -43,7 +43,11 @@ class AuditWorkflow:
         auditor = self.auditor
         if isinstance(auditor, AntigravityAdapter) and job.get("audit_model"):
             auditor = AntigravityAdapter(
-                auditor.executable, str(job["audit_model"]), auditor.effort, auditor.timeout_seconds
+                auditor.executable,
+                str(job["audit_model"]),
+                auditor.effort,
+                auditor.timeout_seconds,
+                runner=auditor.runner,
             )
         result = await auditor.audit(
             Path(audit_context["worktree"]),

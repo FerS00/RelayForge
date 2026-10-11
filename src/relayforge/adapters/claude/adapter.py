@@ -31,8 +31,13 @@ class ClaudeAdapter:
         model = spec.model or self.model
         if model:
             argv.extend(["--model", model])
+        if spec.effort:
+            if spec.effort not in {"low", "medium", "high", "xhigh", "max"}:
+                raise ValueError("Esfuerzo no permitido.")
+            argv.extend(["--effort", spec.effort])
+        denied = _DENIED if spec.web_search is not False else (*_DENIED, "WebSearch", "WebFetch")
         argv.extend(
-            ["--include-partial-messages", "--permission-mode", "default", "--disallowed-tools", *_DENIED]
+            ["--include-partial-messages", "--permission-mode", "default", "--disallowed-tools", *denied]
         )
         if spec.schema_path is not None:
             argv.extend(["--json-schema", str(spec.schema_path)])

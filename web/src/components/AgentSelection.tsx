@@ -11,6 +11,8 @@ export function AgentSelection({ agent, model, allowed, label, onAgent, onModel 
   const id = useId()
   const status = useQuery({ queryKey: ['agent-status'], queryFn: api.agentStatus, staleTime: 30000 })
   const current = status.data?.find((item) => item.agent === agent)
+  const models = [...new Set(current?.models ?? [])]
+  const savedModelMissing = Boolean(model && !models.includes(model))
   return <fieldset>
     <legend>{label}</legend>
     <label>Agente de {label}
@@ -19,10 +21,14 @@ export function AgentSelection({ agent, model, allowed, label, onAgent, onModel 
       </select>
     </label>
     <label>Modelo de {label}
-      <input list={id} maxLength={128} pattern="[A-Za-z0-9][A-Za-z0-9._:\/\-]*" value={model}
-        placeholder="Predeterminado de la CLI" onChange={(event) => onModel(event.target.value)} />
-      <datalist id={id}>{current?.models.map((item) => <option key={item} value={item} />)}</datalist>
+      <select id={id} value={model} onChange={(event) => onModel(event.target.value)}>
+        <option value="">Predeterminado de la CLI</option>
+        {savedModelMissing && <option value={model} disabled>{model} · guardado, fuera del catálogo</option>}
+        {models.map((item) => <option key={item} value={item}>{item}</option>)}
+      </select>
     </label>
+    {status.isPending && <p role="status">Cargando modelos…</p>}
+    {!status.isPending && !status.isError && models.length === 0 && <p role="status">Sin catálogo disponible; puedes usar el modelo predeterminado.</p>}
     <p>{current ? `CLI: ${current.status} · autenticación: ${current.auth}` : 'Disponibilidad sin comprobar.'}</p>
     {status.isError && <p role="status">No se pudo consultar la disponibilidad del agente.</p>}
   </fieldset>

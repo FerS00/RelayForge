@@ -14,6 +14,9 @@ class RunSpec:
     prompt: str
     schema_path: Path | None = None
     model: str = ""
+    effort: str = ""
+    # None keeps the CLI default (Jobs); chat turns pass the conversation policy.
+    web_search: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -64,6 +67,10 @@ class ConversationContext:
     cwd: Path
     step_id: str = ""
     model: str = ""
+    image_paths: tuple[Path, ...] = ()
+    evidence_text: str = ""
+    effort: str = ""
+    web_search: bool = False
 
 
 @dataclass(frozen=True)
@@ -133,3 +140,7 @@ class PlannerAdapter(Protocol):
         diff: str,
         test_results: list[dict[str, Any]],
     ) -> TriageResult: ...
+
+
+class ChatOrchestrator(Protocol):
+    def chat(self, ctx: ConversationContext, message: str) -> AsyncIterator[NormalizedEvent]: ...

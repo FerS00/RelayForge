@@ -42,6 +42,7 @@ COPY web/ C:/app/web/
 RUN npm.cmd run build
 
 RUN New-Item -ItemType Directory -Force C:\relayforge-home, C:\workspace, C:\projects, C:\relayforge-claude, C:\relayforge-codex | Out-Null; icacls C:\relayforge-home /grant '*S-1-5-93-2-2:(OI)(CI)M' | Out-Null; icacls C:\workspace /grant '*S-1-5-93-2-2:(OI)(CI)M' | Out-Null; icacls C:\projects /grant '*S-1-5-93-2-2:(OI)(CI)M' | Out-Null; icacls C:\relayforge-claude /grant '*S-1-5-93-2-2:(OI)(CI)M' | Out-Null; icacls C:\relayforge-codex /grant '*S-1-5-93-2-2:(OI)(CI)M' | Out-Null
+RUN $ErrorActionPreference = 'Stop'; icacls C:\tools\agy\bin\agy.exe /inheritance:r /grant '*S-1-5-93-2-1:F' '*S-1-5-18:F' '*S-1-5-93-2-2:RX' | Out-Null; if ($LASTEXITCODE -ne 0) { throw 'Antigravity CLI ACL setup failed.' }
 
 WORKDIR C:\app
 USER ContainerUser

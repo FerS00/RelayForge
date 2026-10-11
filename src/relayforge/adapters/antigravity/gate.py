@@ -105,17 +105,17 @@ def dispatch(policy_path: Path, command: str) -> int:
                     counts = ChecksAdapter.summarize_output(output_text)
             finally:
                 supervisor.kill(handle)
-        print(
-            json.dumps(
-                {
-                    "exit_code": code,
-                    "status": "passed" if code == 0 else "failed",
-                    "counts": counts,
-                    "duration_seconds": round(time.monotonic() - started, 3),
-                },
-                ensure_ascii=False,
-            )
-        )
+        evidence = {
+            "name": command,
+            "exit_code": code,
+            "status": "passed" if code == 0 else "failed",
+            "counts": counts,
+            "duration_seconds": round(time.monotonic() - started, 3),
+        }
+        evidence_path = policy_path.parent / "checks.ndjson"
+        with evidence_path.open("a", encoding="utf-8") as evidence_file:
+            evidence_file.write(json.dumps(evidence, ensure_ascii=False) + "\n")
+        print(json.dumps(evidence, ensure_ascii=False))
         return 0 if code == 0 else 1
     except (KeyError, OSError, ValueError, subprocess.TimeoutExpired):
         return 126

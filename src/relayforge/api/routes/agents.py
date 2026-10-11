@@ -6,7 +6,9 @@ from typing import Any, cast
 from fastapi import APIRouter, Request
 
 from relayforge.core.agent_health import AgentHealthService
+from relayforge.core.conversation_settings import EFFORTS
 from relayforge.doctor.checks import _agent
+from relayforge.doctor.model_catalog import discover_efforts, discover_models
 
 router = APIRouter(prefix="/api/agents")
 
@@ -29,19 +31,35 @@ def agent_status(request: Request) -> list[dict[str, Any]]:
                 "codex": _agent(settings.codex_executable, ["login", "status"]),
                 "antigravity": _agent("agy"),
             }
+            for agent, executable in (
+                ("claude", settings.claude_executable),
+                ("codex", settings.codex_executable),
+                ("antigravity", "agy"),
+            ):
+                probes[agent]["model_catalog"] = discover_models(agent, executable)
+            probes["codex"]["effort_catalog"] = discover_efforts("codex")
             request.app.state.agent_status_cache = (now, probes)
     health = {row["agent"]: row for row in service.list()}
     result = []
     for agent, probe in probes.items():
-        models = list(settings.agent_models.get(agent, ()))
+        models = list(dict.fromkeys([*probe.get("model_catalog", []), *settings.agent_models.get(agent, ())]))
         if agent == "claude" and settings.claude_model and settings.claude_model not in models:
             models.insert(0, settings.claude_model)
         result.append(
             {
                 "agent": agent,
-                **probe,
+                **{
+                    key: value
+                    for key, value in probe.items()
+                    if key not in {"model_catalog", "effort_catalog"}
+                },
                 "health": health.get(agent),
                 "models": models,
+                "efforts": {
+                    model: [level for level in EFFORTS if level in levels]
+                    for model, levels in probe.get("effort_catalog", {}).items()
+                },
+                "default_efforts": list(EFFORTS) if agent in {"claude", "codex"} else [],
                 "usage": service.usage(agent),
             }
         )

@@ -19,6 +19,7 @@ from relayforge.core.auth import AuthService
 from relayforge.core.repositories import RepositoryError, RepositoryService
 from relayforge.db.session import create_db_engine, make_session_factory, run_migrations
 from relayforge.doctor.checks import compare_fingerprint, doctor_report, fingerprint
+from relayforge.ops.backup import BackupError, create_backup, restore_backup
 from relayforge.settings import SettingsError, load_settings
 
 
@@ -80,6 +81,11 @@ def main(argv: list[str] | None = None) -> int:
     dispatcher = subparsers.add_parser("check-dispatch")
     dispatcher.add_argument("--policy", type=Path, required=True)
     dispatcher.add_argument("--command", dest="command_name", required=True)
+    backup = subparsers.add_parser("backup")
+    backup.add_argument("--output", type=Path)
+    restore = subparsers.add_parser("restore")
+    restore.add_argument("--from", dest="backup_dir", type=Path, required=True)
+    restore.add_argument("--home", dest="target_home", type=Path, required=True)
     args = parser.parse_args(argv)
     listener: socket.socket | None = None
     try:
@@ -91,8 +97,25 @@ def main(argv: list[str] | None = None) -> int:
             from relayforge.adapters.antigravity.gate import dispatch
 
             return dispatch(args.policy, args.command_name)
+        if args.command == "restore":
+            result = restore_backup(args.backup_dir, args.target_home)
+            print(json.dumps(result, ensure_ascii=False, sort_keys=True, indent=2))
+            return 0
         port_override = getattr(args, "port", None)
         settings = load_settings(**({"port": port_override} if port_override is not None else {}))
+        if args.command == "backup":
+            output_root = args.output or settings.home / "backups"
+            backup_path = create_backup(settings.home, output_root)
+            manifest = json.loads((backup_path / "manifest.json").read_text(encoding="utf-8"))
+            print(
+                json.dumps(
+                    {"backup": str(backup_path), "counts": manifest["counts"]},
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    indent=2,
+                )
+            )
+            return 0
         if args.command == "doctor":
             if args.fingerprint:
                 print(json.dumps(fingerprint(), ensure_ascii=False, sort_keys=True, indent=2))
@@ -138,23 +161,11 @@ def main(argv: list[str] | None = None) -> int:
             finally:
                 engine.dispose()
             return 0
-        executable = shutil.which(settings.claude_executable)
+        executable_field = f"{settings.chat_agent}_executable"
+        executable = shutil.which(getattr(settings, executable_field))
         if executable is None:
-            raise SettingsError("No se encontró el ejecutable configurado de Claude Code.")
-        settings = type(settings)(
-            workspace_dir=settings.workspace_dir,
-            port=settings.port,
-            home=settings.home,
-            projects_root=settings.projects_root,
-            claude_executable=executable,
-            claude_model=settings.claude_model,
-            codex_executable=settings.codex_executable,
-            bind=settings.bind,
-            container_mode=settings.container_mode,
-            trusted_proxy_ip=settings.trusted_proxy_ip,
-            allowed_tailscale_logins=settings.allowed_tailscale_logins,
-            allowed_hosts=settings.allowed_hosts,
-        )
+            raise SettingsError(f"No se encontró el ejecutable configurado de {settings.chat_agent}.")
+        settings = settings.model_copy(update={executable_field: executable})
         listener = _bind_listener(settings.port, settings.bind)
         distribution = Path(__file__).resolve().parents[2] / "web" / "dist"
         if not (distribution / "index.html").is_file():
@@ -180,6 +191,9 @@ def main(argv: list[str] | None = None) -> int:
         )
         _RelayForgeServer(config).run(sockets=[listener])
         return 0
+    except BackupError as exc:
+        print(json.dumps({"error": exc.code}, ensure_ascii=False), file=sys.stderr)
+        return 2
     except (SettingsError, RepositoryError) as exc:
         print(str(exc), file=sys.stderr)
         return 2

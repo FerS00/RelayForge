@@ -42,7 +42,8 @@ def test_chat_persists_turn_and_replays_idempotency(client: TestClient, app, mon
             "SELECT seq, type FROM events WHERE conversation_id=? ORDER BY seq", (created["id"],)
         ).all()
     assert [row[0] for row in event_order] == list(range(1, len(event_order) + 1))
-    assert event_order[0][1] == "step.started"
+    assert event_order[0][1] == "step.queued"
+    assert event_order[1][1] == "step.started"
     for marker in (
         "FAKE_THINKING_MARKER",
         "FAKE_TOOL_MARKER",
@@ -100,7 +101,7 @@ def test_failed_turn_is_persisted_and_conversation_accepts_next_message(
     )
 
 
-def test_active_turn_rejects_second_request_and_validation_errors(client: TestClient, monkeypatch) -> None:
+def test_active_turn_queues_second_request_and_validation_errors(client: TestClient, monkeypatch) -> None:
     monkeypatch.setenv("FAKE_AGENT_SCENARIO", "two_messages")
     conversation = client.post("/api/conversations", json={}).json()
     endpoint = f"/api/conversations/{conversation['id']}/messages"
@@ -110,7 +111,7 @@ def test_active_turn_rejects_second_request_and_validation_errors(client: TestCl
     )
     assert (
         client.post(endpoint, json={"content": "second"}, headers={"Idempotency-Key": "active-2"}).status_code
-        == 409
+        == 202
     )
     assert client.post(endpoint, json={"content": "missing"}).status_code == 400
     assert (

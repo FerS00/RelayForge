@@ -7,6 +7,12 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from relayforge.db.redacted import RedactedText
 
+# Kept literal so the ORM does not import core modules; equals ToolPolicy() defaults.
+DEFAULT_TOOLS_JSON = (
+    '{"commands":true,"desktop":true,"git_local":true,"preview":true,"remote_delivery":false,'
+    '"web_search":false,"write_files":true}'
+)
+
 
 def utc_now() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
@@ -22,8 +28,15 @@ class Conversation(Base):
     title: Mapped[str] = mapped_column(RedactedText(), default="Nueva conversación")
     workspace_dir: Mapped[str] = mapped_column(Text)
     orchestrator: Mapped[str] = mapped_column(String, default="claude")
+    model: Mapped[str] = mapped_column(String, default="", server_default="")
     session_id: Mapped[str] = mapped_column(String)
     session_established: Mapped[int] = mapped_column(Integer, default=0)
+    next_event_seq: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    effort: Mapped[str] = mapped_column(String, default="", server_default="")
+    tools_json: Mapped[str] = mapped_column(
+        Text, default=DEFAULT_TOOLS_JSON, server_default=DEFAULT_TOOLS_JSON
+    )
+    settings_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     created_at: Mapped[str] = mapped_column(String, default=utc_now)
     updated_at: Mapped[str] = mapped_column(String, default=utc_now)
     messages: Mapped[list[Message]] = relationship(
@@ -86,10 +99,9 @@ class Job(Base):
     audit_model: Mapped[str | None] = mapped_column(String, nullable=True)
     paused_stage: Mapped[str | None] = mapped_column(String, nullable=True)
     require_plan_approval: Mapped[int] = mapped_column(Integer, default=0)
+    review_only: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     status: Mapped[str] = mapped_column(String, default="QUEUED", index=True)
-    conversation_id: Mapped[str] = mapped_column(
-        ForeignKey("conversations.id", ondelete="CASCADE"), unique=True
-    )
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id", ondelete="CASCADE"))
     repository_id: Mapped[str | None] = mapped_column(
         ForeignKey("repositories.id", ondelete="SET NULL"), nullable=True
     )
@@ -103,6 +115,9 @@ class Job(Base):
     diff_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     diff_paths_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     orchestrator_session_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    planner_session_established: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    origin_message_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    origin_turn_id: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[str] = mapped_column(String, default=utc_now)
     updated_at: Mapped[str] = mapped_column(String, default=utc_now, index=True)
     finished_at: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -229,3 +244,104 @@ class ApprovalGrant(Base):
     job_id: Mapped[str] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"), index=True)
     matcher_json: Mapped[str] = mapped_column(Text)
     created_at: Mapped[str] = mapped_column(String, default=utc_now)
+
+
+class Attachment(Base):
+    __tablename__ = "attachments"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id", ondelete="CASCADE"))
+    message_id: Mapped[str | None] = mapped_column(
+        ForeignKey("messages.id", ondelete="SET NULL"), nullable=True
+    )
+    name: Mapped[str] = mapped_column(RedactedText())
+    media_type: Mapped[str] = mapped_column(String)
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    sha256: Mapped[str] = mapped_column(String)
+    stored_sha256: Mapped[str] = mapped_column(String)
+    storage_name: Mapped[str] = mapped_column(String, unique=True)
+    extracted_text: Mapped[str] = mapped_column(RedactedText(), default="")
+    state: Mapped[str] = mapped_column(String, default="ready")
+    created_at: Mapped[str] = mapped_column(String, default=utc_now)
+
+
+class ChatTurn(Base):
+    __tablename__ = "chat_turns"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    conversation_id: Mapped[str] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE"), index=True
+    )
+    message_id: Mapped[str] = mapped_column(ForeignKey("messages.id", ondelete="CASCADE"), unique=True)
+    agent: Mapped[str] = mapped_column(String)
+    model: Mapped[str] = mapped_column(String)
+    tool_depth: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    effort: Mapped[str] = mapped_column(String, default="", server_default="")
+    tools_json: Mapped[str] = mapped_column(Text, default="{}", server_default="{}")
+    status: Mapped[str] = mapped_column(String, default="queued")
+    version: Mapped[int] = mapped_column(Integer, default=0)
+    pid: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    pid_create_time: Mapped[float | None] = mapped_column(nullable=True)
+    created_at: Mapped[str] = mapped_column(String, default=utc_now)
+    finished_at: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+class ChatAction(Base):
+    __tablename__ = "chat_actions"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    conversation_id: Mapped[str] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE"), index=True
+    )
+    turn_id: Mapped[str] = mapped_column(ForeignKey("chat_turns.id", ondelete="CASCADE"))
+    kind: Mapped[str] = mapped_column(String)
+    payload_json: Mapped[str] = mapped_column(RedactedText(json_content=True))
+    resource_path: Mapped[str] = mapped_column(Text, default="")
+    operation_hash: Mapped[str] = mapped_column(String(64))
+    snapshot: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String, default="pending")
+    version: Mapped[int] = mapped_column(Integer, default=0)
+    decision_key: Mapped[str | None] = mapped_column(String, unique=True, nullable=True)
+    result_json: Mapped[str | None] = mapped_column(RedactedText(json_content=True), nullable=True)
+    pid: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    pid_create_time: Mapped[float | None] = mapped_column(nullable=True)
+    created_at: Mapped[str] = mapped_column(String, default=utc_now)
+    finished_at: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+class Preview(Base):
+    __tablename__ = "previews"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    conversation_id: Mapped[str] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False
+    )
+    action_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    job_id: Mapped[str | None] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"), nullable=True)
+    root_path: Mapped[str] = mapped_column(Text)
+    kind: Mapped[str] = mapped_column(String)
+    argv_json: Mapped[str] = mapped_column(Text, default="[]", server_default="[]")
+    port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    pid: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    pid_create_time: Mapped[float | None] = mapped_column(nullable=True)
+    status: Mapped[str] = mapped_column(String)
+    error_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    log_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_access_at: Mapped[str] = mapped_column(String, default=utc_now)
+    created_at: Mapped[str] = mapped_column(String, default=utc_now)
+    finished_at: Mapped[str | None] = mapped_column(String, nullable=True)
+    version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    __table_args__ = (Index("ix_previews_conversation_status", "conversation_id", "status"),)
+
+
+class DesktopTarget(Base):
+    __tablename__ = "desktop_targets"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    conversation_id: Mapped[str] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE"), index=True
+    )
+    action_id: Mapped[str] = mapped_column(String)
+    app: Mapped[str] = mapped_column(String)
+    pid: Mapped[int] = mapped_column(Integer)
+    pid_create_time: Mapped[float] = mapped_column()
+    hwnd: Mapped[int] = mapped_column(Integer)
+    title: Mapped[str] = mapped_column(RedactedText(), default="")
+    status: Mapped[str] = mapped_column(String, default="open")
+    created_at: Mapped[str] = mapped_column(String, default=utc_now)
+    closed_at: Mapped[str | None] = mapped_column(String, nullable=True)

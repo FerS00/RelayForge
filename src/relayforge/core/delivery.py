@@ -44,6 +44,19 @@ class DeliveryWorkflow:
         diff_hash = self.git_delivery.diff_hash(current_diff)
         if self.git_delivery.diff_hash(str(context["diff"])) != diff_hash:
             raise RuntimeError("delivery_diff_changed")
+        if context.get("review_only"):
+            report = {
+                "job_id": job_id,
+                "branch": context["branch"],
+                "diff_hash": diff_hash,
+                "changed_paths": context["paths"],
+                "delivery": "review_only",
+                "risks": [],
+            }
+            self._write_report(job_id, report)
+            self.jobs.record_job_event(job_id, "final_review.created", "core", None, report)
+            self.jobs.transition(job_id, JobStatus.COMPLETED)
+            return {"decision": "allow", "no_delivery": True}
         branch = str(context["branch"])
         protected = branch == str(context["default_branch"])
         try:
@@ -166,6 +179,8 @@ class DeliveryWorkflow:
         context = self.jobs.delivery_context(job_id)
         if context is None:
             raise RuntimeError("delivery_context_missing")
+        if context.get("review_only"):
+            raise RuntimeError("chat_job_review_only")
         branch = str(context["branch"])
         diff_hash = self.git_delivery.diff_hash(str(context["diff"]))
         operation = self.approvals.approved_operation(job_id, diff_hash)

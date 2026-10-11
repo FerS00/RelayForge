@@ -51,10 +51,55 @@ def test_hash_change_during_successful_audit_becomes_blocked(tmp_path: Path, mon
     def run(argv, **kwargs):
         source.write_text("changed during audit", encoding="utf-8")
         response = {"verdict": "APPROVED", "summary": "Looks good", "findings": []}
-        event = {"event": "result", "result": {"response": json.dumps(response)}}
+        event = {"event": "result", "result": {"response": json.dumps(response), "status": "SUCCESS"}}
         return SimpleNamespace(returncode=0, stdout=(json.dumps(event) + "\n").encode())
 
     monkeypatch.setattr(adapter_module.subprocess, "run", run)
     result = AntigravityAdapter()._audit(worktree, ["src.py"], [], 1, "diff")
     assert result.verdict == "BLOCKED"
     assert result.hashes_before != result.hashes_after
+
+
+@pytest.mark.parametrize(
+    "denied, response, expected",
+    [
+        ([{"action": "command"}], "", "permiso nativo"),
+        ([], "", "dictamen"),
+    ],
+)
+def test_native_permission_denial_is_precise_and_fail_closed(
+    tmp_path, monkeypatch, denied, response, expected
+):
+    monkeypatch.setattr(adapter_module.shutil, "which", lambda _: "agy.exe")
+    event = {
+        "event": "result",
+        "result": {"status": "SUCCESS", "response": response, "denied_actions": denied},
+    }
+
+    def run(argv, **kwargs):
+        prompt = argv[-1]
+        assert "dispatch_commands" in prompt and "Cwd exacto" in prompt
+        return SimpleNamespace(returncode=0, stdout=json.dumps(event).encode())
+
+    monkeypatch.setattr(adapter_module.subprocess, "run", run)
+    result = AntigravityAdapter()._audit(tmp_path, [], [], 1, "diff")
+    assert result.verdict == "BLOCKED" and expected in result.summary
+
+
+def test_audit_cannot_approve_without_executing_required_checks(tmp_path, monkeypatch):
+    monkeypatch.setattr(adapter_module.shutil, "which", lambda _: "agy.exe")
+    response = {"verdict": "APPROVED", "summary": "Looks good", "findings": []}
+    event = {"event": "result", "result": {"status": "SUCCESS", "response": json.dumps(response)}}
+    monkeypatch.setattr(
+        adapter_module.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=json.dumps(event).encode()),
+    )
+    result = AntigravityAdapter()._audit(
+        tmp_path,
+        [],
+        [{"name": "git-check", "argv": ["git", "diff", "--check"], "timeout_seconds": 30}],
+        1,
+        "diff",
+    )
+    assert result.verdict == "BLOCKED" and "omitió" in result.summary

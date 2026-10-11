@@ -23,12 +23,13 @@ def test_environment_is_allowlisted(tmp_path: Path) -> None:
         source_env={
             "PATH": "C:/tools",
             "TEMP": "C:/temp",
+            "USERPROFILE": "D:/profiles/check-user",
             "ANTHROPIC_API_KEY": "synthetic-secret",
             "CODEX_HOME": "C:/private",
             "AWS_ACCESS_KEY_ID": "synthetic-key",
         },
     )
-    assert plan.env == {"PATH": "C:/tools", "TEMP": "C:/temp"}
+    assert plan.env == {"PATH": "C:/tools", "TEMP": "C:/temp", "USERPROFILE": "D:/profiles/check-user"}
 
 
 def test_pytest_and_junit_results_are_parsed_safely(tmp_path: Path) -> None:
